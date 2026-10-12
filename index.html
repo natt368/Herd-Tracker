@@ -109,7 +109,10 @@
     gap:16px;
     flex-wrap:wrap;
   }
-  .brand{display:flex; align-items:center; gap:12px;}
+  .brand{display:flex; align-items:center; gap:12px; cursor:pointer; border-radius:999px;}
+  .brand:hover .brand-mark{ transform:rotate(-8deg); }
+  .brand-mark{ transition:transform .15s ease; }
+  .brand:focus-visible{ outline:2px solid var(--brass-light); outline-offset:4px; }
   .brand-mark{
     width:38px; height:38px;
     border-radius:50%;
@@ -177,7 +180,10 @@
 
   /* ---------- Cards / stat blocks ---------- */
   .grid{ display:grid; gap:14px; }
-  .stat-grid{ grid-template-columns:repeat(auto-fit, minmax(128px,1fr)); margin-bottom:26px; }
+  /* Stat cards sit in one row; on narrow screens the row scrolls sideways. */
+  .stat-grid{ grid-auto-flow:column; grid-auto-columns:minmax(108px,1fr); overflow-x:auto; padding:2px 2px 6px; margin:0 -2px 20px; scrollbar-width:thin; }
+  .stat-grid .stat-card{ padding:14px 12px; min-width:0; }
+  .stat-grid .stat-card .label{ font-size:10.5px; letter-spacing:0.06em; }
   .stat-card{
     background:var(--surface);
     border:1px solid var(--line-soft);
@@ -290,6 +296,7 @@
   .task-body{ flex:1; min-width:0; }
   .task-title{ font-size:13.5px; font-weight:600; }
   .task-sub{ font-size:12px; color:var(--ink-soft); }
+  .task-note{ font-size:12.5px; color:var(--ink); margin-top:3px; overflow:hidden; text-overflow:ellipsis; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; }
   .task-when{ font-size:12px; font-weight:700; font-family:'JetBrains Mono',monospace; white-space:nowrap; }
   .task-when.overdue{ color:var(--danger); }
   .task-when.due{ color:var(--tag-dark); }
@@ -454,6 +461,16 @@
   }
   .icon-btn .drive-dot.connected{ background:var(--pasture); }
   .icon-btn .drive-dot.error{ background:var(--danger); }
+  .icon-btn .sync-wire{ transition:transform .3s ease; }
+  .icon-btn.busy .sync-wire{ animation:sync-spin 1.1s linear infinite; }
+  @keyframes sync-spin{ to{ transform:rotate(360deg); } }
+  .icon-btn .sync-check{
+    position:absolute; right:-3px; bottom:-3px; width:17px; height:17px; border-radius:50%;
+    background:var(--pasture); color:#fff; font-size:11px; font-weight:800; line-height:17px; text-align:center;
+    border:1.5px solid #F6E7C8; opacity:0; transform:scale(.4); transition:opacity .2s ease, transform .2s ease; pointer-events:none;
+  }
+  .icon-btn .sync-check.show{ opacity:1; transform:scale(1); }
+  @media (prefers-reduced-motion: reduce){ .icon-btn.busy .sync-wire{ animation-duration:3s; } }
 
   .hold-reset-btn{
     position:relative; overflow:hidden; width:100%; padding:14px 16px;
@@ -518,7 +535,7 @@
   }
 
   /* Header: dark tooled-leather band, full width, with stitching */
-  .topbar{ position: relative; padding: 18px 0; margin-bottom: 18px; }
+  .topbar{ position: sticky; top: 0; z-index: 50; padding: 18px 0; margin-bottom: 18px; }
   .topbar::before{
     content:""; position:absolute; top:0; bottom:0; left:calc(50% - 50vw); right:calc(50% - 50vw); z-index:-1;
     background:
@@ -616,7 +633,7 @@
 <body>
 <div id="app">
   <div class="topbar">
-    <div class="brand">
+    <div class="brand" role="button" tabindex="0" title="Back to the dashboard" onclick="goHome()" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault(); goHome();}">
       <div class="brand-mark">
         <!-- Horseshoe brand mark -->
         <svg width="24" height="24" viewBox="0 0 24 24" fill="none" aria-hidden="true">
@@ -637,12 +654,21 @@
     </div>
     <div style="display:flex; gap:10px;">
       <button class="icon-btn" id="drive-btn" onclick="openDriveModal()" title="Google Drive sync" aria-label="Google Drive sync">
-        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-          <path d="M3 15l4-7h10l4 7H3z"></path>
-          <path d="M7 15l3 5h4l3-5"></path>
-          <path d="M12 4l2.5 4"></path>
+        <!-- Barbed-wire sync loop: spins while syncing or backing up -->
+        <svg class="sync-wire" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M20 12a8 8 0 0 0-14.3-4.9"></path>
+          <path d="M4 12a8 8 0 0 0 14.3 4.9"></path>
+          <path d="M5.2 3.6v3.9h3.9"></path>
+          <path d="M18.8 20.4v-3.9h-3.9"></path>
+          <path d="M16.6 5.1l2.1 2.1M18.7 5.1l-2.1 2.1" stroke-width="1.3"></path>
+          <path d="M10.9 2.9l2.2 2.2M13.1 2.9l-2.2 2.2" stroke-width="1.3"></path>
+          <path d="M5.3 16.8l2.1 2.1M7.4 16.8l-2.1 2.1" stroke-width="1.3"></path>
+          <path d="M10.9 18.9l2.2 2.2M13.1 18.9l-2.2 2.2" stroke-width="1.3"></path>
+          <path d="M19.4 10.9l1.2 2.2M20.6 10.9l-1.2 2.2" stroke-width="1.2"></path>
+          <path d="M3.4 10.9l1.2 2.2M4.6 10.9l-1.2 2.2" stroke-width="1.2"></path>
         </svg>
         <span class="drive-dot" id="drive-dot"></span>
+        <span class="sync-check" id="sync-check" aria-hidden="true">✓</span>
       </button>
       <button class="icon-btn" onclick="openSettingsModal()" title="Settings" aria-label="Settings">
         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
@@ -772,6 +798,21 @@ async function driveSaveState(data){
   const parsed = JSON.parse(text);
   if(parsed && parsed.error) throw new Error(parsed.error);
 }
+/* The barbed-wire sync button spins while a sync or backup is running, and flashes a check when a backup finishes. */
+var driveBusyCount = 0, syncCheckTimer = null;
+function setDriveBusy(on){
+  driveBusyCount = Math.max(0, driveBusyCount + (on ? 1 : -1));
+  const btn = document.getElementById('drive-btn');
+  if(btn) btn.classList.toggle('busy', driveBusyCount > 0);
+}
+function flashSyncCheck(title){
+  const el = document.getElementById('sync-check'), btn = document.getElementById('drive-btn');
+  if(!el) return;
+  el.classList.add('show');
+  if(btn && title) btn.title = title;
+  clearTimeout(syncCheckTimer);
+  syncCheckTimer = setTimeout(()=> el.classList.remove('show'), 4000);
+}
 function refreshDriveStatusUI(){
   const dot = document.getElementById('drive-dot');
   if(!dot) return;
@@ -834,6 +875,7 @@ var syncAgain = false;
 // Pull the latest Drive copy, fold in this device's changes, and push if anything of ours is new.
 function driveSync(){
   if(syncInFlight){ syncAgain = true; return syncInFlight; }
+  setDriveBusy(true);
   syncInFlight = (async ()=>{
     try{
       do{
@@ -873,6 +915,7 @@ function driveSync(){
       } while(syncAgain);
     } finally {
       syncInFlight = null;
+      setDriveBusy(false);
       refreshDriveStatusUI();
     }
   })();
@@ -1317,6 +1360,12 @@ function renderTabs(){
   }).join('');
 }
 function setTab(id){ if(id!=='animals') selectedAnimalIds.clear(); currentTab = id; render(); }
+function goHome(){
+  if(typeof closeModal==='function') closeModal();
+  if(typeof closeDrawer==='function') closeDrawer();
+  setTab('dashboard');
+  window.scrollTo({ top:0, behavior:'smooth' });
+}
 
 /* =========================================================
    MAIN RENDER DISPATCH
@@ -1357,11 +1406,13 @@ var upcomingCache = [];
 function getUpcomingTasks(){
   const today = todayStr();
   const groups = new Map();
-  const add = (key, label, kind, date, animalId)=>{
+  const add = (key, label, kind, date, animalId, note)=>{
     if(!date) return;
-    if(!groups.has(key)) groups.set(key, { key, label, kind, date, days: daysBetween(today, date), animalIds: [] });
+    if(!groups.has(key)) groups.set(key, { key, label, kind, date, days: daysBetween(today, date), animalIds: [], notes: [] });
     const g = groups.get(key);
     if(animalId && !g.animalIds.includes(animalId)) g.animalIds.push(animalId);
+    note = String(note || '').trim();
+    if(note && !g.notes.includes(note)) g.notes.push(note);
   };
   const detail = ev=> ev.vaccine ? ' · ' + ev.vaccine : (ev.pregResult ? ' · ' + ev.pregResult : '');
 
@@ -1370,12 +1421,12 @@ function getUpcomingTasks(){
     if(!a || !isActive(a)) return;
     // Scheduled: logged with a date that hasn't arrived yet.
     if(ev.date && ev.date > today){
-      add(`sched|${ev.type}|${ev.date}|${detail(ev)}`, ev.type + detail(ev), 'Scheduled', ev.date, a.id);
+      add(`sched|${ev.type}|${ev.date}|${detail(ev)}`, ev.type + detail(ev), 'Scheduled', ev.date, a.id, ev.notes);
     }
     // Follow-up due, unless a later event of the same type has been logged for this animal since.
     if(ev.nextDue){
       const followedUp = state.events.some(o=> o!==ev && o.animalId===ev.animalId && o.type===ev.type && o.date > ev.date && o.date <= today);
-      if(!followedUp) add(`due|${ev.type}|${ev.nextDue}|${detail(ev)}`, ev.type + detail(ev), 'Follow-up due', ev.nextDue, a.id);
+      if(!followedUp) add(`due|${ev.type}|${ev.nextDue}|${detail(ev)}`, ev.type + detail(ev), 'Follow-up due', ev.nextDue, a.id, ev.notes);
     }
   });
 
@@ -1399,7 +1450,8 @@ function openUpcomingGroup(idx){
   if(!g) return;
   const animals = g.animalIds.map(animalById).filter(Boolean).sort(byName);
   const body = `
-    <p class="hint" style="margin:0 0 14px; font-size:12.5px;">${escapeHtml(g.kind)} · ${fmtDate(g.date)} · ${animals.length} animal${animals.length===1?'':'s'}</p>
+    <p class="hint" style="margin:0 0 ${g.notes && g.notes.length ? 8 : 14}px; font-size:12.5px;">${escapeHtml(g.kind)} · ${fmtDate(g.date)} · ${animals.length} animal${animals.length===1?'':'s'}</p>
+    ${g.notes && g.notes.length ? `<p style="margin:0 0 14px; font-size:13px; color:var(--ink); background:var(--surface-2); padding:8px 10px; border-radius:var(--radius); white-space:pre-wrap;">${escapeHtml(g.notes.join('\n'))}</p>` : ''}
     <div style="border:1px solid var(--line-soft); border-radius:var(--radius); background:var(--white); max-height:420px; overflow-y:auto;">
       ${animals.map(a=>`<div class="mini-row" style="padding:8px 10px; cursor:pointer;" onclick="closeModal(); openDrawer('${a.id}')">
         <span>${eartag(a)} <span class="muted" style="font-size:11.5px;">${escapeHtml(classLabel(a))}</span></span>
@@ -1660,6 +1712,7 @@ function viewDashboard(){
             <div class="task-body">
               <div class="task-title">${escapeHtml(t.label)} <span class="muted" style="font-weight:500;">— ${n} animal${n===1?'':'s'}</span></div>
               <div class="task-sub">${escapeHtml(t.kind)} · ${fmtDate(t.date)}</div>
+              ${t.notes && t.notes.length ? `<div class="task-note">${escapeHtml(t.notes.join(' · '))}</div>` : ''}
             </div>
             <div class="task-when ${urg}">${when}</div>
           </div>`;
@@ -1669,15 +1722,15 @@ function viewDashboard(){
 
     <div class="panel">
       <h2>Recent activity</h2>
-      <p class="sub">Latest entries across the herd.</p>
+      <p class="sub">Latest entries across the herd. Click one to open the animal.</p>
       ${recentEvents.length===0 ? `<div class="empty-state"><div class="icon">🐄</div><h3>No records yet</h3><p>Health events and updates will show up here.</p></div>` :
       `<div class="task-list">
         ${recentEvents.map(ev=>{
           const a = animalById(ev.animalId);
-          return `<div class="task-item">
+          return `<div class="task-item" ${a ? `style="cursor:pointer;" title="Open ${escapeHtml(displayName(a))}" onclick="openDrawer('${a.id}')"` : ''}>
             <div class="task-dot ok"></div>
             <div class="task-body">
-              <div class="task-title">${escapeHtml(ev.type)} — ${escapeHtml(displayName(a))}</div>
+              <div class="task-title">${escapeHtml(ev.type)}${ev.vaccine ? ' · '+escapeHtml(ev.vaccine) : ''} — ${escapeHtml(displayName(a))}</div>
               <div class="task-sub">${escapeHtml(ev.notes||'')}</div>
             </div>
             <div class="task-when ok">${fmtDate(ev.date)}</div>
@@ -2852,15 +2905,24 @@ function backupNow(btn){
   if(btn){ btn.disabled = true; btn.textContent = 'Backing up…'; }
   const done = ()=>{ if(btn){ btn.disabled = false; btn.textContent = 'Back up now'; } };
   // Save any pending changes first so the backup includes them.
+  setDriveBusy(true);
   driveSync().catch(()=>{})
     .then(()=>gasCall('rbBackup', false))
-    .then(r=>{ lastDriveBackup = r; updateBackupLast(); toast('Backed up to Google Drive'); })
+    .then(r=>{ lastDriveBackup = r; updateBackupLast(); backupDone(r); toast('Backed up to Google Drive'); })
     .catch(e=>toast('Backup failed: ' + ((e && e.message) || 'error')))
-    .finally(done);
+    .finally(()=>{ setDriveBusy(false); done(); });
 }
 function autoBackupToDrive(){
   if(!hostedInWorkspace || !storageReady || !(driveScriptVersion >= 4)) return;
-  gasCall('rbBackup', true).then(r=>{ lastDriveBackup = r; updateBackupLast(); }).catch(()=>{});
+  setDriveBusy(true);
+  gasCall('rbBackup', true)
+    .then(r=>{ lastDriveBackup = r; updateBackupLast(); backupDone(r); })
+    .catch(()=>{})
+    .finally(()=> setDriveBusy(false));
+}
+function backupDone(r){
+  const when = r && r.at ? new Date(r.at).toLocaleTimeString([], {hour:'numeric', minute:'2-digit'}) : '';
+  flashSyncCheck(r && r.skipped ? `Google Drive sync — backup up to date (last saved ${when})` : `Google Drive sync — backed up at ${when}`);
 }
 setInterval(autoBackupToDrive, 60000);
 function openFolderPicker(folderId){
