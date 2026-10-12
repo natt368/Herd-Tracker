@@ -6,6 +6,24 @@
 <title>Rangebook — Herd Management</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Rye&family=Roboto+Slab:wght@500;700;800&family=Public+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+<script>
+/* If Rangebook fails to start (or hits an unexpected error), show it on screen instead of a blank page. */
+(function(){
+  function show(msg){
+    try{
+      var bar = document.getElementById('rb-error-bar');
+      if(!bar){
+        bar = document.createElement('div'); bar.id = 'rb-error-bar';
+        bar.style.cssText = 'position:fixed;left:0;right:0;top:0;z-index:9999;background:#A5301E;color:#fff;font:600 13px/1.4 sans-serif;padding:10px 14px;white-space:pre-wrap;';
+        (document.body || document.documentElement).appendChild(bar);
+      }
+      bar.textContent = 'Rangebook hit a problem — please screenshot this: ' + msg;
+    }catch(e){}
+  }
+  window.addEventListener('error', function(e){ show((e.message || 'error') + (e.lineno ? ' (line ' + e.lineno + ':' + e.colno + ')' : '')); });
+  window.addEventListener('unhandledrejection', function(e){ var r = e.reason; show('async: ' + (r && (r.message || r)) ); });
+})();
+</script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <style>
   :root{
@@ -647,22 +665,22 @@
 /* =========================================================
    STATE
 ========================================================= */
-let state = { animals: [], events: [], breeding: [], pastures: [], breeds: [], vaccines: [] };
-let currentTab = 'dashboard';
-let animalFilters = { search:'', klass:'all', status:'active', pasture:'all' };
-let selectedAnimalIds = new Set();
-let storageReady = false;
+var state = { animals: [], events: [], breeding: [], pastures: [], breeds: [], vaccines: [] };
+var currentTab = 'dashboard';
+var animalFilters = { search:'', klass:'all', status:'active', pasture:'all' };
+var selectedAnimalIds = new Set();
+var storageReady = false;
 
-const CLASSES = ['Cow','Bull','Heifer','Steer','Bull Calf','Heifer Calf'];
-const EVENT_TYPES = ['Vaccination','Treatment','Weight Check','Calving','Weaning','Pregnancy Check','Death / Loss','Sale','Purchase','Other'];
-const BREED_PALETTE = ['#A8481F','#4C6B3A','#C97A2B','#8A7A46','#6E6249','#37501F','#7E3517','#965A1B','#5B4636','#3C6E71','#7A4B8A','#B23A2E'];
-const GESTATION_DAYS = 283;
-const WEAN_TARGET_DAYS = 205;
+var CLASSES = ['Cow','Bull','Heifer','Steer','Bull Calf','Heifer Calf'];
+var EVENT_TYPES = ['Vaccination','Treatment','Weight Check','Calving','Weaning','Pregnancy Check','Death / Loss','Sale','Purchase','Other'];
+var BREED_PALETTE = ['#A8481F','#4C6B3A','#C97A2B','#8A7A46','#6E6249','#37501F','#7E3517','#965A1B','#5B4636','#3C6E71','#7A4B8A','#B23A2E'];
+var GESTATION_DAYS = 283;
+var WEAN_TARGET_DAYS = 205;
 
 /* =========================================================
    STORAGE
 ========================================================= */
-const hasAppStorage = typeof window!=='undefined' && !!window.storage && typeof window.storage.get==='function';
+var hasAppStorage = typeof window!=='undefined' && !!window.storage && typeof window.storage.get==='function';
 
 function loadDriveConfig(){
   try{
@@ -675,9 +693,9 @@ function persistDriveConfig(cfg){
   driveScriptVersion = null;
   try{ localStorage.setItem('herd-drive-config', JSON.stringify(cfg)); }catch(e){}
 }
-let driveConfig = loadDriveConfig();
-let driveStatus = 'idle'; // idle | connected | error | syncing
-let driveLastSync = null;
+var driveConfig = loadDriveConfig();
+var driveStatus = 'idle'; // idle | connected | error | syncing
+var driveLastSync = null;
 
 // Scripts older than version 3 don't know about tag colours and drop them when merging.
 // Until the script is updated, each device keeps its own tag colours instead of losing them.
@@ -692,7 +710,7 @@ function driveError(code, msg){ const e = new Error(msg || code); e.code = code;
 /* When the app is served by the Workspace script (HtmlService), Google provides
    google.script.run: calls go straight to that script as the signed-in user,
    with no web-app URL or secret involved. */
-const hostedInWorkspace = typeof google!=='undefined' && !!(google.script && google.script.run);
+var hostedInWorkspace = typeof google!=='undefined' && !!(google.script && google.script.run);
 function gasCall(fn, ...args){
   return new Promise((resolve, reject)=>{
     google.script.run.withSuccessHandler(resolve).withFailureHandler(err=>reject(driveError('script', err && err.message)))[fn](...args);
@@ -716,7 +734,7 @@ async function driveFetchState(){
   return parsed;
 }
 // Version 2+ scripts merge saves on Google's side under a lock; older ones just overwrite.
-let driveScriptVersion = null;
+var driveScriptVersion = null;
 async function driveCheckVersion(){
   if(hostedInWorkspace){
     try{ const info = await gasCall('rbInfo'); driveScriptVersion = (info && info.version) || 2; }
@@ -787,8 +805,8 @@ function applyLoadedState(parsed){
    it got from Drive (syncBase). Before saving, it fetches the latest file and
    replays only this device's own adds/edits/deletes onto it, so one person's
    save never wipes out someone else's changes. */
-let syncBase = null;
-const SYNC_KEYS = {
+var syncBase = null;
+var SYNC_KEYS = {
   animals: r=>r.id, events: r=>r.id, breeding: r=>r.id, pastures: r=>r.id,
   breeds: r=>String(r.name||'').toLowerCase(), vaccines: r=>String(r).toLowerCase(),
   tagColors: r=>String(r.letter||'').toUpperCase(),
@@ -811,8 +829,8 @@ function mergeStates(base, local, remote){
   Object.keys(SYNC_KEYS).forEach(name=>{ out[name] = mergeCollection(base[name], local[name], remote[name], SYNC_KEYS[name]); });
   return out;
 }
-let syncInFlight = null;
-let syncAgain = false;
+var syncInFlight = null;
+var syncAgain = false;
 // Pull the latest Drive copy, fold in this device's changes, and push if anything of ours is new.
 function driveSync(){
   if(syncInFlight){ syncAgain = true; return syncInFlight; }
@@ -897,7 +915,7 @@ async function loadState(){
   storageReady = true;
   refreshDriveStatusUI();
 }
-let saveTimer = null;
+var saveTimer = null;
 function saveState(){
   if(promoteHeifersWithCalves().length) render();
   clearTimeout(saveTimer);
@@ -960,7 +978,7 @@ function ageLabel(dob){
   if(d<730) return Math.floor(d/30.4) + 'mo';
   return (d/365.25).toFixed(1) + 'yr';
 }
-const STATUS_LABELS = { 'active':'Active', 'active-preg':'Active – Preg', 'sold':'Sold', 'deceased':'Deceased' };
+var STATUS_LABELS = { 'active':'Active', 'active-preg':'Active – Preg', 'sold':'Sold', 'deceased':'Deceased' };
 // "Active – Preg" animals are still in the herd, so they count as active everywhere.
 function isActive(a){ return !!a && (a.status==='active' || a.status==='active-preg'); }
 function statusLabel(s){ return STATUS_LABELS[s] || s || '—'; }
@@ -1098,7 +1116,7 @@ function handleBreedSelectChange(selectEl){
   const dot = document.getElementById('breed-color-dot');
   if(dot) dot.style.background = breedColor(selectEl.value);
 }
-let breedChipCache = [];
+var breedChipCache = [];
 function renderBreedChips(){
   breedChipCache = state.breeds.slice().sort((a,b)=>a.name.localeCompare(b.name));
   if(breedChipCache.length===0) return `<p class="hint" style="margin:0;">No breeds added yet.</p>`;
@@ -1203,7 +1221,7 @@ function removeTagColor(letter){
   saveState(); render(); refreshTagColorChips();
   toast(`Removed tag colour for ${letter}`);
 }
-let vaccineChipCache = [];
+var vaccineChipCache = [];
 function renderVaccineChips(){
   vaccineChipCache = state.vaccines.slice().sort((a,b)=>a.localeCompare(b));
   if(vaccineChipCache.length===0) return `<p class="hint" style="margin:0;">No vaccines added yet.</p>`;
@@ -1276,7 +1294,7 @@ function unassignedAnimals(){
 /* =========================================================
    TABS
 ========================================================= */
-const TABS = [
+var TABS = [
   { id:'dashboard', label:'Dashboard' },
   { id:'animals', label:'Animals' },
   { id:'pairs', label:'Pairs' },
@@ -1335,7 +1353,7 @@ function render(){
 ========================================================= */
 /* Upcoming & overdue: one row per event (same kind, type and date), listing the animals involved.
    Sources: health events dated in the future, follow-ups (Next due date), weaning windows, expected calvings. */
-let upcomingCache = [];
+var upcomingCache = [];
 function getUpcomingTasks(){
   const today = todayStr();
   const groups = new Map();
@@ -1397,13 +1415,13 @@ function openUpcomingGroup(idx){
    One bar chart of head counts, filtered by class/pasture and grouped by age, class,
    pasture, breed or year letter. Click a bar or table row to see those animals.
 ========================================================= */
-let summaryFilters = { klass:'all', pasture:'all', groupBy:'age' };
-let summaryBuckets = [];
-const SUMMARY_CLASS_FILTERS = [
+var summaryFilters = { klass:'all', pasture:'all', groupBy:'age' };
+var summaryBuckets = [];
+var SUMMARY_CLASS_FILTERS = [
   ['all','All animals'], ['Cow','Cows'], ['preg','Pregnant (Active – Preg)'], ['Bred Heifer','Bred heifers'], ['Open Heifer','Open heifers'],
   ['Heifer','All heifers'], ['Bull','Bulls'], ['Steer','Steers'], ['calves','Calves'],
 ];
-const SUMMARY_GROUPS = [['age','Age'], ['class','Class'], ['pasture','Pasture'], ['breed','Breed'], ['yearLetter','Year letter']];
+var SUMMARY_GROUPS = [['age','Age'], ['class','Class'], ['pasture','Pasture'], ['breed','Breed'], ['yearLetter','Year letter']];
 // Open the summary pre-filtered from a dashboard card (always by age, across all pastures).
 function openSummary(klass){
   summaryFilters = { klass, pasture:'all', groupBy:'age' };
@@ -1428,7 +1446,7 @@ function summaryAnimals(){
 /* Age comes from the year letter (North American system: I, O, Q, U, V are skipped, so 21 letters,
    A = 2013 … N = 2025, P = 2026, repeating every 21 years). The date of birth is kept for reference
    (and weaning, which needs the exact day) but isn't used for age. */
-const YEAR_LETTERS = 'ABCDEFGHJKLMNPRSTWXYZ';
+var YEAR_LETTERS = 'ABCDEFGHJKLMNPRSTWXYZ';
 function yearFromLetter(letter){
   const i = YEAR_LETTERS.indexOf(String(letter||'').trim().toUpperCase());
   if(i < 0 || String(letter||'').trim().length !== 1) return null;
@@ -1568,7 +1586,7 @@ function showSummaryTip(evt, i){
   tip.style.left = Math.min(panel.width - tip.offsetWidth - 8, Math.max(8, px - panel.left + 12)) + 'px';
   tip.style.top = (target.top - panel.top - tip.offsetHeight - 4) + 'px';
 }
-let summaryResizeTimer = null;
+var summaryResizeTimer = null;
 window.addEventListener('resize', ()=>{
   if(currentTab!=='summary') return;
   clearTimeout(summaryResizeTimer);
@@ -1803,7 +1821,7 @@ function openBulkMoveModal(){
 /* =========================================================
    PASTURES
 ========================================================= */
-let pastureGroupNamesCache = [];
+var pastureGroupNamesCache = [];
 function viewPastures(){
   const groups = getPastureGroups();
   const names = Object.keys(groups).sort((a,b)=>a.localeCompare(b));
@@ -1893,7 +1911,7 @@ function refreshPastureLibrary(){
   if(el) el.innerHTML = renderPastureLibrary();
 }
 
-let pastureFormPhoto = null;
+var pastureFormPhoto = null;
 function renderPastureModalPhotoBlock(){
   if(pastureFormPhoto){
     return `<img src="${pastureFormPhoto}" alt="Pasture photo" style="width:100%;max-height:160px;object-fit:cover;border-radius:4px;margin-bottom:8px;border:1px solid var(--line-soft);">
@@ -1901,7 +1919,7 @@ function renderPastureModalPhotoBlock(){
   }
   return `<p class="hint" style="margin:0 0 8px;">No photo yet.</p>`;
 }
-let pastureModalFromSettings = false;
+var pastureModalFromSettings = false;
 function closePastureModal(){
   closeModal();
   if(pastureModalFromSettings){ pastureModalFromSettings = false; openSettingsModal('pasture-library-section'); }
@@ -2022,8 +2040,8 @@ function savePasture(evt, id, editing){
   toast(editing? 'Pasture updated' : 'Pasture added');
 }
 // Deleting a pasture needs a 10-second press-and-hold in its Edit window.
-const PASTURE_DELETE_HOLD_MS = 10000;
-let pastureHoldRAF = null;
+var PASTURE_DELETE_HOLD_MS = 10000;
+var pastureHoldRAF = null;
 function startPastureDeleteHold(id){
   if(pastureHoldRAF) return;
   const btn = document.getElementById('pasture-delete-hold');
@@ -2076,7 +2094,7 @@ function deletePasture(id){
 }
 
 /* ---------- Move group / bulk move modal ---------- */
-let moveModalIds = [];
+var moveModalIds = [];
 function openMoveModal(title, animalIds){
   moveModalIds = animalIds.slice();
   const body = `
@@ -2200,9 +2218,9 @@ function modalShell(title, bodyHtml){
 }
 
 /* ---------- Google Drive sync ---------- */
-const DRIVE_SCRIPT_VERSION = 3;
+var DRIVE_SCRIPT_VERSION = 3;
 // Merge logic shared by both Apps Script backends: replay one device's changes (base -> local) onto the current file.
-const GAS_MERGE_SRC = `const KEYS_ = {
+var GAS_MERGE_SRC = `const KEYS_ = {
   animals: function (r) { return r.id; },
   events: function (r) { return r.id; },
   breeding: function (r) { return r.id; },
@@ -2295,7 +2313,7 @@ function doPost(e) {
 }
 `;
 }
-const DEFAULT_APP_URL = 'https://natt368.github.io/Herd-Tracker/index.html';
+var DEFAULT_APP_URL = 'https://natt368.github.io/Herd-Tracker/index.html';
 function workspaceScriptSource(){
   const appUrl = /^https?:$/.test(location.protocol) && !hostedInWorkspace ? location.href.split('#')[0].split('?')[0] : DEFAULT_APP_URL;
   return `/**
@@ -2517,7 +2535,7 @@ function openDriveModal(){
    Moves a whole herd between copies of the app (e.g. from the github.io site
    into the Workspace edition). Imports go through the normal save, so a
    synced herd shares them with everyone. */
-let pendingImport = null;
+var pendingImport = null;
 function herdCounts(d){
   const n = (k, w)=>{ const c = (d[k]||[]).length; return c + ' ' + w + (c===1 ? '' : 's'); };
   return [n('animals','animal'), n('events','health event'), n('breeding','breeding record'), n('pastures','pasture')].join(', ');
@@ -2634,7 +2652,7 @@ function showDriveConnectError(html){
   el.style.display = html ? 'block' : 'none';
   if(html) el.scrollIntoView({ block:'nearest' });
 }
-const DRIVE_ERROR_HELP = {
+var DRIVE_ERROR_HELP = {
   unauthorized: `<b>The script's secret doesn't match this browser.</b> This happens when the script was copied in a different browser or from the downloaded file version of the app.<br>
     <b>Fix:</b> in your Apps Script, find the line <span class="mono">const SECRET = "…"</span>, copy the text between the quotes into the <b>Secret</b> box above, and tap Connect again.`,
   blocked: `<b>Google blocked the request.</b> In Apps Script open <b>Deploy → Manage deployments</b>, click ✎ Edit, and check:
@@ -2839,9 +2857,9 @@ function openSettingsModal(scrollTo){
   document.getElementById('modal-root').innerHTML = modalShell('Settings', body);
 }
 
-let resetHoldStart = null;
-let resetHoldRAF = null;
-const RESET_HOLD_MS = 10000;
+var resetHoldStart = null;
+var resetHoldRAF = null;
+var RESET_HOLD_MS = 10000;
 function startResetHold(evt){
   if(evt && evt.preventDefault) evt.preventDefault();
   if(resetHoldRAF) return;
@@ -2898,7 +2916,7 @@ function performReset(){
 
 
 /* ---------- Animal modal ---------- */
-let animalFormPhoto = null;
+var animalFormPhoto = null;
 function renderAnimalModalPhotoBlock(){
   if(animalFormPhoto){
     return `<img src="${animalFormPhoto}" alt="Animal photo" style="width:100%;max-height:180px;object-fit:cover;border-radius:4px;margin-bottom:8px;border:1px solid var(--line-soft);">
@@ -3098,7 +3116,7 @@ function deleteAnimal(id){
 }
 
 /* ---------- Import from spreadsheet ---------- */
-const IMPORT_HEADER_MAP = {
+var IMPORT_HEADER_MAP = {
   rfid:'tagId', rfidtag:'tagId', rfidnumber:'tagId', rfidno:'tagId', rfidtagnumber:'tagId', eid:'tagId', eidtag:'tagId', electronicid:'tagId', electronicidnumber:'tagId',
   tagid:'tagId', tag:'tagId', tagnumber:'tagId', eartag:'tagId', eartagid:'tagId', id:'tagId',
   tagno:'tagId', tagnum:'tagId', eartagnumber:'tagId', eartagno:'tagId', animalid:'tagId', animalnumber:'tagId', animalno:'tagId',
@@ -3122,7 +3140,7 @@ const IMPORT_HEADER_MAP = {
   purchasedate:'purchaseDate', datepurchased:'purchaseDate', bought:'purchaseDate', datebought:'purchaseDate',
   weight:'weight', currentweight:'weight', weightlb:'weight', weightlbs:'weight', wt:'weight', lbs:'weight', weightinlbs:'weight',
 };
-let importRows = [];
+var importRows = [];
 
 function normalizeHeader(h){ return String(h||'').trim().toLowerCase().replace(/[^a-z0-9]/g,''); }
 
@@ -3218,11 +3236,11 @@ function handleImportFile(evt){
 }
 
 // What to do with spreadsheet rows whose tag is already in the herd: null (not chosen yet), 'skip' or 'overwrite'.
-let importDupMode = null;
-let importExtraColumns = new Set();
+var importDupMode = null;
+var importExtraColumns = new Set();
 // Every tab is read. In each, the header row is the first of the top 15 rows that has a tag column,
 // so title rows above the headers are fine.
-let importSheets = [];
+var importSheets = [];
 function readImportSheet(name, sheet){
   // Keep blank rows so row numbers match what Excel shows.
   const grid = XLSX.utils.sheet_to_json(sheet, { header:1, defval:'', raw:false, blankrows:true });
@@ -3357,7 +3375,7 @@ function renderImportPreview(){
 }
 
 // Spreadsheet column -> animal field, for overwriting an existing animal with only the cells that were filled in.
-const IMPORT_OVERWRITE_FIELDS = ['name','klass','breed','dob','yearLetter','damId','sireId','status','pasture','notes','scrotalCm','semenCheck','semenCheckDate','purchasePrice','purchasedFrom','purchaseDate'];
+var IMPORT_OVERWRITE_FIELDS = ['name','klass','breed','dob','yearLetter','damId','sireId','status','pasture','notes','scrotalCm','semenCheck','semenCheckDate','purchasePrice','purchasedFrom','purchaseDate'];
 // Dam/Sire cells may hold a name instead of an RFID; link them to that animal's RFID when the name is unique.
 function linkParentsByName(tags){
   const unique = (list, name)=>{ const m = list.filter(x=> String(x.name||'').trim().toLowerCase()===name); return m.length===1 ? m[0] : null; };
