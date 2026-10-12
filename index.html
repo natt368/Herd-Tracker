@@ -2791,10 +2791,7 @@ function openWorkspaceDriveModal(){
       </div>
       <p class="hint" style="margin:0;">Herd data is saved to Google Drive and shared with everyone who opens this app's link.${driveLastSync ? ' Last synced '+driveLastSync.toLocaleTimeString()+'.' : ''}</p>
     </div>
-    <div class="field" id="workspace-info" style="background:var(--surface-2); padding:12px 14px; border-radius:var(--radius); margin-bottom:16px;">
-      <label style="margin-bottom:6px;">Share with your crew</label>
-      <p class="hint" style="margin:0;">Loading…</p>
-    </div>
+    <div id="workspace-info"></div>
     <div id="workspace-storage"></div>
     ${backupSectionHtml()}
     <div class="modal-actions">
@@ -2805,11 +2802,6 @@ function openWorkspaceDriveModal(){
   gasCall('rbInfo').then(info=>{
     const el = document.getElementById('workspace-info');
     if(!el) return;
-    el.innerHTML = `
-      <label style="margin-bottom:6px;">Share with your crew</label>
-      <p class="hint" style="margin:0 0 8px;">Send this link to anyone in your organization. They sign in with their own Google account.${info.user ? ' You are signed in as <b>'+escapeHtml(info.user)+'</b>.' : ''}</p>
-      <input type="text" readonly class="mono" style="width:100%; font-size:12px;" value="${escapeHtml(info.url)}" onfocus="this.select()">
-      <button type="button" class="btn ghost sm" style="margin-top:8px;" onclick="copyText(${escapeHtml(JSON.stringify(info.url))}, 'Link copied')">Copy link</button>`;
     driveScriptVersion = (info && info.version) || 2;
     const storage = document.getElementById('workspace-storage');
     if(storage && driveScriptVersion >= 4){ lastDriveBackup = info.backup || lastDriveBackup; storage.innerHTML = workspaceStorageHtml(info); updateBackupLast(); }
@@ -2823,10 +2815,7 @@ function openWorkspaceDriveModal(){
           <li>Deploy → Manage deployments → ✎ Edit → Version: <b>New version</b> → Deploy.</li>
         </ol>
       </div>`);
-  }).catch(()=>{
-    const el = document.getElementById('workspace-info');
-    if(el) el.innerHTML = `<label style="margin-bottom:6px;">Share with your crew</label><p class="hint" style="margin:0;">Send your crew the same link you used to open this app.</p>`;
-  });
+  }).catch(()=>{});
 }
 /* Workspace edition (script v4+): choose the data folder, and dated backups in Drive. */
 var lastDriveBackup = null;
