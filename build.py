@@ -28,7 +28,7 @@ html = html[:m.start()] + packed + html[m.end():]
 
 os.makedirs(OUT, exist_ok=True)
 open(os.path.join(OUT, 'index.html'), 'w', encoding='utf-8').write(html)
-for f in ('README.md', '.nojekyll'):
+for f in ('README.md', '.nojekyll', 'favicon.svg', 'favicon.png', 'apple-touch-icon.png'):
     if os.path.exists(f):
         shutil.copy(f, OUT)
 print('built %s/index.html (app script packed, %d bytes)' % (OUT, len(m.group(1))))

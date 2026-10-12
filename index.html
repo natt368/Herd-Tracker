@@ -4,6 +4,9 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Rangebook — Herd Management</title>
+<link rel="icon" type="image/svg+xml" href="favicon.svg">
+<link rel="icon" type="image/png" sizes="192x192" href="favicon.png">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Rye&family=Roboto+Slab:wght@500;700;800&family=Public+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
 <script>
@@ -2272,8 +2275,8 @@ function modalShell(title, bodyHtml){
 
 /* ---------- Google Drive sync ---------- */
 var DRIVE_SCRIPT_VERSION = 3;
-// The Workspace script has its own version: 4 added choosing the data folder and Drive backups.
-var WORKSPACE_SCRIPT_VERSION = 4;
+// The Workspace script has its own version: 4 added choosing the data folder and Drive backups; 5 the Rangebook tab icon.
+var WORKSPACE_SCRIPT_VERSION = 5;
 // Merge logic shared by both Apps Script backends: replay one device's changes (base -> local) onto the current file.
 var GAS_MERGE_SRC = `const KEYS_ = {
   animals: function (r) { return r.id; },
@@ -2415,9 +2418,13 @@ function appHtml_() {
   return getOrCreate_(APP_CACHE_NAME, '<p>Rangebook could not be loaded. Try again in a minute.</p>').getBlob().getDataAsString();
 }
 
+// The browser-tab icon (the Rangebook horseshoe), published next to the app.
+const FAVICON_URL = APP_URL.substring(0, APP_URL.lastIndexOf('/') + 1) + 'favicon.png';
+
 function doGet() {
   return HtmlService.createHtmlOutput(appHtml_())
     .setTitle('Rangebook — Herd Management')
+    .setFaviconUrl(FAVICON_URL)
     .addMetaTag('viewport', 'width=device-width, initial-scale=1');
 }
 
@@ -2861,7 +2868,7 @@ function openWorkspaceDriveModal(){
     if(driveScriptVersion < WORKSPACE_SCRIPT_VERSION) el.insertAdjacentHTML('beforebegin', `
       <div class="field" style="background:var(--tag-bg); padding:12px 14px; border-radius:var(--radius); margin-bottom:16px;">
         <label style="margin-bottom:6px; color:var(--tag-dark);">Update your Workspace script</label>
-        <p class="hint" style="margin:0 0 8px; color:var(--ink-soft);">Your script is an older version. Update it to choose which Drive folder the data is saved in, and to get automatic backups every minute. Updating takes a minute and keeps the same link:</p>
+        <p class="hint" style="margin:0 0 8px; color:var(--ink-soft);">${driveScriptVersion < 4 ? 'Your script is an older version. Update it to choose which Drive folder the data is saved in, and to get automatic backups every minute.' : 'A new version of your script is ready: it shows the Rangebook horseshoe as the browser-tab icon.'} Updating takes a minute and keeps the same link:</p>
         <ol style="margin:0; padding-left:18px; font-size:12.5px; color:var(--ink-soft); line-height:1.7;">
           <li><button type="button" class="btn ghost sm" onclick="copyWorkspaceScript()">Copy updated script</button></li>
           <li>Open your project at <a href="https://script.google.com" target="_blank" rel="noopener" style="color:var(--rust); font-weight:600;">script.google.com</a>, replace all the code with the copied script, and save.</li>
