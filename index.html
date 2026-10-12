@@ -2263,8 +2263,47 @@ function deletePasture(id){
 }
 
 /* ---------- Move group / bulk move modal ---------- */
-var moveModalIds = [], moveModalTitle = '';
+var moveModalIds = [], moveModalTitle = '', moveBack = null;
+function moveGoBack(){ if(moveBack) moveBack(); else openMoveModal(moveModalTitle, moveModalIds); }
+/* Settings → Pastures → Move group: pick the pasture to move from and the one to move to. */
+function openGroupMoveModal(from, to){
+  moveBack = null;
+  const groups = getPastureGroups();
+  const names = Object.keys(groups).sort((x,y)=>x.localeCompare(y, undefined, { numeric:true }));
+  const unassigned = unassignedAnimals().length;
+  const fromOpts = names.map(n=>`<option value="${escapeHtml(n)}" ${groups[n].length===0?'disabled':''} ${from===n?'selected':''}>${escapeHtml(n)} (${groups[n].length} head)</option>`).join('')
+    + (unassigned ? `<option value="__none__" ${from==='__none__'?'selected':''}>No pasture (${unassigned} head)</option>` : '');
+  const toOpts = names.map(n=>`<option value="${escapeHtml(n)}" ${to===n?'selected':''}>${escapeHtml(n)} (${groups[n].length} head)</option>`).join('');
+  const body = `
+    <p class="hint" style="margin:0 0 14px; font-size:12.5px;">Moves every active animal in one pasture to another. You'll see a summary before anything changes, and you can undo it afterwards.</p>
+    <div class="field-row">
+      <div class="field"><label>From</label>
+        <select id="group-move-from"><option value="">— Choose a pasture —</option>${fromOpts}</select></div>
+      <div class="field"><label>To</label>
+        <select id="group-move-to"><option value="">— Choose a pasture —</option>${toOpts}</select></div>
+    </div>
+    <p class="hint" style="margin:0;">Pastures are added with <b>+ Add pasture</b>.</p>
+    <div class="modal-actions">
+      <button type="button" class="btn ghost" onclick="closeModal()">Cancel</button>
+      <button type="button" class="btn rust" onclick="nextGroupMove()">Next →</button>
+    </div>`;
+  document.getElementById('modal-root').innerHTML = modalShell('Move group', body);
+}
+function nextGroupMove(){
+  const from = document.getElementById('group-move-from').value;
+  const to = document.getElementById('group-move-to').value;
+  if(!from){ toast('Choose the pasture to move from'); return; }
+  if(!to){ toast('Choose the pasture to move to'); return; }
+  if(from===to){ toast('From and To are the same pasture'); return; }
+  const animals = from==='__none__' ? unassignedAnimals() : state.animals.filter(a=>isActive(a) && (a.pasture||'').trim()===from);
+  if(!animals.length){ toast('No animals in that pasture'); return; }
+  moveModalIds = animals.map(a=>a.id);
+  moveModalTitle = '';
+  moveBack = ()=> openGroupMoveModal(from, to);
+  openMoveReview(to);
+}
 function openMoveModal(title, animalIds){
+  moveBack = null;
   moveModalIds = animalIds.slice();
   moveModalTitle = title;
   const body = `
@@ -2317,7 +2356,7 @@ function openMoveReview(dest){
       </div>` : ''}
     <p class="hint" style="margin:0 0 4px;">You can undo this move afterwards from the message that appears, or from <b>Settings ⚙ → Pastures → Recent moves</b>.</p>
     <div class="modal-actions">
-      <button type="button" class="btn ghost" onclick="openMoveModal(moveModalTitle, moveModalIds)">← Back</button>
+      <button type="button" class="btn ghost" onclick="moveGoBack()">← Back</button>
       <div style="flex:1;"></div>
       <button type="button" class="btn rust" id="move-go-btn" ${already.length ? 'disabled' : ''} onclick="performMove(${escapeHtml(JSON.stringify(dest))})">${dest ? `Move ${head}` : `Unassign ${head}`}</button>
     </div>`;
@@ -3426,7 +3465,10 @@ function viewSettings(){
       ${settingsSection('pastures', '🌾', 'Pastures', 'Add, edit, move groups, delete, or undo a move', n((state.pastures||[]).length, 'pasture', 'pastures'), `
         <div id="pasture-library-section">
           <p class="hint" style="margin:0 0 10px;">Add pastures and edit their name, acres, notes and photo. Edit is also where you move a pasture's group or delete it.</p>
-          <button type="button" class="btn ghost sm" style="margin-bottom:12px;" onclick="openPastureModal(null, true)">+ Add pasture</button>
+          <div style="display:flex; gap:8px; flex-wrap:wrap; margin-bottom:12px;">
+            <button type="button" class="btn ghost sm" onclick="openPastureModal(null, true)">+ Add pasture</button>
+            <button type="button" class="btn rust sm" onclick="openGroupMoveModal()">⇄ Move group</button>
+          </div>
           <div id="pasture-library-list">${renderPastureLibrary()}</div>
           ${recentMovesHtml()}
         </div>`)}
