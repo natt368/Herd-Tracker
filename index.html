@@ -2868,8 +2868,16 @@ function copyDriveScript(){
 function copyDriveCode(){ copyText(encodeDriveCode(driveConfig), 'Connection code copied'); }
 function copyDriveLink(){ copyText(driveShareLink(), 'Link copied'); }
 
+/* The Drive sync panel lives inline in Settings → Manage Data (no popup).
+   openDriveModal() jumps there and re-draws it; drivePanelHtml() is what viewSettings shows. */
 function openDriveModal(){
-  if(hostedInWorkspace){ openWorkspaceDriveModal(); return; }
+  const panel = document.getElementById('drive-panel');
+  if(!panel){ openSettingsModal('sync'); return; }
+  panel.innerHTML = drivePanelHtml();
+  if(hostedInWorkspace) loadWorkspaceInfo(true);
+}
+function drivePanelHtml(){
+  if(hostedInWorkspace) return workspacePanelHtml();
   const cfg = driveConfig || { url:'', secret:'' };
   const connected = !!cfg.url;
   const statusColor = driveStatus==='error' ? 'var(--danger)' : (connected ? 'var(--pasture)' : 'var(--ink-faint)');
@@ -2904,7 +2912,7 @@ function openDriveModal(){
     ${updateNotice}
     <div class="field" style="background:var(--surface-2); padding:12px 14px; border-radius:var(--radius); margin-bottom:16px;">
       <label style="margin-bottom:6px;">Connect another device</label>
-      <p class="hint" style="margin:0 0 8px;">On the other device, open Rangebook, tap the Drive button, and paste this code.</p>
+      <p class="hint" style="margin:0 0 8px;">On the other device, open Rangebook, go to Settings → Manage Data, and paste this code.</p>
       <input type="text" readonly class="mono" style="width:100%; font-size:12px;" value="${escapeHtml(encodeDriveCode(cfg))}" onfocus="this.select()">
       <div style="display:flex; gap:8px; margin-top:8px; flex-wrap:wrap;">
         <button type="button" class="btn ghost sm" onclick="copyDriveCode()">Copy code</button>
@@ -2916,7 +2924,6 @@ function openDriveModal(){
     <div class="modal-actions">
       <button type="button" class="btn ghost" style="margin-right:auto; color:var(--danger);" onclick="disconnectDrive()">Disconnect</button>
       <button type="button" class="btn ghost" onclick="testDriveConnection()">Test connection</button>
-      <button type="button" class="btn rust" onclick="closeModal()">Done</button>
     </div>
   ` : `
     ${status}
@@ -2944,20 +2951,19 @@ function openDriveModal(){
           <li>Copy the Web app URL and paste it below.</li>
         </ol>
       </div>
-      <div class="field"><label>Web app URL or connection code</label><input type="text" name="connect" autocomplete="off" placeholder="https://script.google.com/macros/s/…/exec  or  rb1.…"></div>
+      <div class="field"><label>Web app URL or connection code</label><input type="text" id="drive-connect-input" name="connect" autocomplete="off" placeholder="https://script.google.com/macros/s/…/exec  or  rb1.…"></div>
       <details style="margin-bottom:6px; font-size:12.5px; color:var(--ink-soft);">
         <summary style="cursor:pointer;">Have the secret from your script? (optional)</summary>
-        <div class="field" style="margin-top:10px;"><label>Secret</label><input type="text" name="secret" autocomplete="off" placeholder="SECRET from your script"></div>
+        <div class="field" style="margin-top:10px;"><label>Secret</label><input type="text" id="drive-secret-input" name="secret" autocomplete="off" placeholder="SECRET from your script"></div>
       </details>
       <div id="drive-connect-error" style="display:none; background:var(--danger-bg); color:var(--ink); border:1px solid var(--danger); border-radius:var(--radius); padding:10px 12px; font-size:12.5px; line-height:1.55; margin-top:10px;"></div>
       <div class="modal-actions">
-        <button type="button" class="btn ghost" onclick="closeModal()">Cancel</button>
         <button type="submit" class="btn rust">Connect</button>
       </div>
     </form>
     ${backupSectionHtml()}
   `;
-  document.getElementById('modal-root').innerHTML = modalShell('Google Drive sync', body);
+  return body;
 }
 /* ---------- Backup: export / import ----------
    Moves a whole herd between copies of the app (e.g. from the github.io site
@@ -3094,9 +3100,12 @@ var DRIVE_ERROR_HELP = {
   script: `<b>The script ran into an error.</b> Make sure you replaced <i>all</i> the code in the project with the copied script, saved, and deployed a new version.`,
   http: `<b>Google returned an error.</b> Wait a minute and try again. If it keeps happening, deploy a new version of the script.`,
 };
-function openWorkspaceDriveModal(){
+// Last rbInfo answer from the Workspace script, so a re-draw of Settings doesn't blank the panel.
+var workspaceInfo = null, workspaceInfoAt = 0;
+function workspacePanelHtml(){
   const statusColor = driveStatus==='error' ? 'var(--danger)' : 'var(--pasture)';
-  const body = `
+  const info = workspaceInfo;
+  return `
     <div class="field" style="margin-bottom:16px;">
       <div style="display:flex; align-items:center; gap:8px; margin-bottom:4px;">
         <span style="width:9px;height:9px;border-radius:50%; background:${statusColor}; display:inline-block; flex-shrink:0;"></span>
@@ -3104,21 +3113,16 @@ function openWorkspaceDriveModal(){
       </div>
       <p class="hint" style="margin:0;">Herd data is saved to Google Drive and shared with everyone who opens this app's link.${driveLastSync ? ' Last synced '+driveLastSync.toLocaleTimeString()+'.' : ''}</p>
     </div>
-    <div id="workspace-info"></div>
-    <div id="workspace-storage"></div>
+    <div id="workspace-update">${info ? workspaceUpdateHtml() : ''}</div>
+    <div id="workspace-storage">${info && driveScriptVersion >= 4 ? workspaceStorageHtml(info) : ''}</div>
     ${backupSectionHtml()}
     <div class="modal-actions">
       <button type="button" class="btn ghost" onclick="testDriveConnection()">Test connection</button>
-      <button type="button" class="btn rust" onclick="closeModal()">Done</button>
     </div>`;
-  document.getElementById('modal-root').innerHTML = modalShell('Google Drive sync', body);
-  gasCall('rbInfo').then(info=>{
-    const el = document.getElementById('workspace-info');
-    if(!el) return;
-    driveScriptVersion = (info && info.version) || 2;
-    const storage = document.getElementById('workspace-storage');
-    if(storage && driveScriptVersion >= 4){ lastDriveBackup = info.backup || lastDriveBackup; storage.innerHTML = workspaceStorageHtml(info); updateBackupLast(); }
-    if(driveScriptVersion < WORKSPACE_SCRIPT_VERSION) el.insertAdjacentHTML('beforebegin', `
+}
+function workspaceUpdateHtml(){
+  if(!(driveScriptVersion < WORKSPACE_SCRIPT_VERSION)) return '';
+  return `
       <div class="field" style="background:var(--tag-bg); padding:12px 14px; border-radius:var(--radius); margin-bottom:16px;">
         <label style="margin-bottom:6px; color:var(--tag-dark);">Update your Workspace script</label>
         <p class="hint" style="margin:0 0 8px; color:var(--ink-soft);">${driveScriptVersion < 4 ? 'Your script is an older version. Update it to choose which Drive folder the data is saved in, and to get automatic backups every minute.' : 'A new version of your script is ready: it shows the Rangebook horseshoe as the browser-tab icon.'} Updating takes a minute and keeps the same link:</p>
@@ -3127,7 +3131,21 @@ function openWorkspaceDriveModal(){
           <li>Open your project at <a href="https://script.google.com" target="_blank" rel="noopener" style="color:var(--rust); font-weight:600;">script.google.com</a>, replace all the code with the copied script, and save.</li>
           <li>Deploy → Manage deployments → ✎ Edit → Version: <b>New version</b> → Deploy.</li>
         </ol>
-      </div>`);
+      </div>`;
+}
+// Fetch folder/backup details for the Manage Data panel (at most every 30s unless forced).
+function loadWorkspaceInfo(force){
+  if(!hostedInWorkspace) return;
+  if(!force && workspaceInfo && Date.now() - workspaceInfoAt < 30000){ updateBackupLast(); return; }
+  workspaceInfoAt = Date.now();
+  gasCall('rbInfo').then(info=>{
+    workspaceInfo = info || {};
+    driveScriptVersion = (info && info.version) || 2;
+    if(driveScriptVersion >= 4) lastDriveBackup = info.backup || lastDriveBackup;
+    const upd = document.getElementById('workspace-update');
+    if(upd) upd.innerHTML = workspaceUpdateHtml();
+    const storage = document.getElementById('workspace-storage');
+    if(storage && driveScriptVersion >= 4){ storage.innerHTML = workspaceStorageHtml(info); updateBackupLast(); }
   }).catch(()=>{});
 }
 /* Workspace edition (script v4+): choose the data folder, and dated backups in Drive. */
@@ -3173,13 +3191,13 @@ function backupNow(btn){
     .finally(()=>{ setDriveBusy(false); done(); });
 }
 /* The top sync button backs up straight away, without opening anything.
-   Sync settings, folder choice and restore live in Settings → Google Drive sync & backups. */
+   Sync settings, folder choice and restore live in Settings → Manage Data. */
 async function syncButtonClick(){
   if(hostedInWorkspace){
     if(driveScriptVersion === null) await driveCheckVersion();
     if(driveScriptVersion >= 4){ backupNow(null); return; }
     setDriveBusy(true);
-    try{ await driveSync(); toast('Synced. Update your Workspace script (Settings → Google Drive sync) to turn on backups.'); }
+    try{ await driveSync(); toast('Synced. Update your Workspace script (Settings → Manage Data) to turn on backups.'); }
     catch(e){ toast('Sync failed — check your connection'); }
     finally{ setDriveBusy(false); }
     return;
@@ -3241,7 +3259,7 @@ function chooseDataFolder(folderIdOrLink, btn){
   if(btn){ btn.disabled = true; btn.textContent = 'Moving…'; }
   gasCall('rbSetFolder', folderIdOrLink).then(f=>{
     toast('Herd data now saved in ' + f.name);
-    openWorkspaceDriveModal();
+    openDriveModal();
   }).catch(e=>{
     if(btn){ btn.disabled = false; btn.textContent = label; }
     const err = document.getElementById('folder-picker-error');
@@ -3291,7 +3309,6 @@ async function saveDriveConnection(evt){
   if(submitBtn){ submitBtn.disabled = true; submitBtn.textContent = 'Connecting…'; }
   const result = await connectDrive(cfg);
   if(result === true){
-    closeModal();
     render();
     toast('Connected to Google Drive');
     return;
@@ -3319,7 +3336,7 @@ function disconnectDrive(){
   syncBase = null;
   driveStatus = 'idle';
   refreshDriveStatusUI();
-  closeModal();
+  openDriveModal();
   toast('Disconnected — data will now be stored on this device only');
 }
 async function testDriveConnection(){
@@ -3349,9 +3366,13 @@ function openSettingsModal(scrollTo){
     const el = key && document.getElementById('settings-' + key);
     if(el) el.scrollIntoView({ block:'start', behavior:'smooth' });
     else window.scrollTo({ top:0 });
+    if(key==='sync') loadWorkspaceInfo(false);
   }, 0);
 }
-function settingsToggle(key, open){ if(open) settingsOpen.add(key); else settingsOpen.delete(key); }
+function settingsToggle(key, open){
+  if(open) settingsOpen.add(key); else settingsOpen.delete(key);
+  if(key==='sync' && open) loadWorkspaceInfo(false);
+}
 function settingsSection(key, icon, title, sub, count, body){
   return `<details class="settings-sec" id="settings-${key}" ${settingsOpen.has(key)?'open':''} ontoggle="settingsToggle('${key}', this.open)">
     <summary>
@@ -3409,9 +3430,8 @@ function viewSettings(){
           <div id="pasture-library-list">${renderPastureLibrary()}</div>
           ${recentMovesHtml()}
         </div>`)}
-      ${settingsSection('sync', '☁️', 'Google Drive sync & backups', 'Where the data is saved, backups, export and import', null, `
-        <p class="hint" style="margin:0 0 10px;">See the sync status, choose the Drive folder, back up now, or export and import a backup file.</p>
-        <button type="button" class="btn ghost" onclick="openDriveModal()">Open Google Drive sync</button>`)}
+      ${settingsSection('sync', '☁️', 'Manage Data', 'Google Drive sync, where the data is saved, backups, export and import', null, `
+        <div id="drive-panel">${drivePanelHtml()}</div>`)}
       ${settingsSection('danger', '⚠️', '<span style="color:var(--danger);">Danger zone</span>', 'Reset all data', null, `
         <p class="hint" style="margin:0 0 12px;">Permanently deletes every animal, pasture, health record, and reproduction record stored in this app. This can't be undone.</p>
         <button type="button" id="reset-hold-btn" class="hold-reset-btn"
