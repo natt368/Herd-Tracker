@@ -186,9 +186,11 @@
   /* ---------- Cards / stat blocks ---------- */
   .grid{ display:grid; gap:14px; }
   /* Stat cards sit in one row; on narrow screens the row scrolls sideways. */
-  .stat-grid{ grid-auto-flow:column; grid-auto-columns:minmax(108px,1fr); overflow-x:auto; padding:2px 2px 6px; margin:0 -2px 20px; scrollbar-width:thin; }
-  .stat-grid .stat-card{ padding:14px 12px; min-width:0; }
-  .stat-grid .stat-card .label{ font-size:10.5px; letter-spacing:0.06em; }
+  .stat-grid{ grid-auto-flow:column; grid-auto-columns:minmax(max-content,1fr); overflow-x:auto; padding:2px 2px 6px; margin:0 -2px 20px; scrollbar-width:thin; }
+  /* Number on top, label on one line pinned to the bottom, so every card lines up. */
+  .stat-grid{ gap:10px; }
+  .stat-grid .stat-card{ padding:14px 11px 12px; display:flex; flex-direction:column; min-height:92px; }
+  .stat-grid .stat-card .label{ font-size:10px; letter-spacing:0.03em; white-space:nowrap; margin-top:auto; }
   .stat-card{
     background:var(--surface);
     border:1px solid var(--line-soft);
@@ -424,7 +426,12 @@
     background:var(--surface); border:1px solid var(--line-soft); border-radius:var(--radius);
     padding:16px 18px; box-shadow:var(--shadow);
     display:flex; flex-direction:column;
+    height:246px; overflow:hidden;
   }
+  .group-pill{ display:inline-block; background:var(--leather, #4A2C17); color:#F6E7C8; border-radius:12px; padding:3px 10px; font-size:12px; font-weight:700; white-space:nowrap; }
+  .pasture-card .pasture-notes{ margin:4px 0 0; min-height:18px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  /* Three rows of ear tags, then View animals shows the rest. */
+  .pasture-card .pasture-tags{ max-height:var(--pasture-tags-h, 92px); overflow:hidden; align-content:flex-start; margin-top:8px; }
   /* The View animals button always sits in the bottom-left corner of the card. */
   .pasture-card .pasture-actions{ margin-top:auto; padding-top:14px; display:flex; justify-content:flex-start; }
   .pasture-photo{
@@ -518,6 +525,8 @@
     background:var(--ink); color:var(--white); padding:10px 18px; border-radius:20px;
     font-size:13px; font-weight:600; box-shadow:var(--shadow-lg); animation:toastIn .15s ease;
   }
+  .toast.toast-action{ display:flex; align-items:center; gap:14px; padding:8px 8px 8px 18px; }
+  .toast.toast-action button{ background:var(--brass-light, #E2B65C); color:#2E1D10; border:0; border-radius:14px; padding:6px 14px; font:inherit; font-weight:800; cursor:pointer; }
   @keyframes toastIn{ from{opacity:0; transform:translateY(6px);} to{opacity:1; transform:translateY(0);} }
 
   /* =========================================================
@@ -583,13 +592,21 @@
   .icon-btn .drive-dot{ border-color: #F6E7C8; }
 
   /* Tabs: brass underline on the active one, rope rule under the row */
+  /* Page buttons sit inside a framed bar so they read as buttons. */
   .tabs{
-    border-bottom: none; padding-bottom: 6px; margin-bottom: 24px;
-    background: repeating-linear-gradient(135deg, var(--line) 0 3px, transparent 3px 6px) bottom / 100% 4px no-repeat;
+    border: 1px solid var(--line); border-bottom: 3px solid var(--brass); border-radius: calc(var(--radius) + 4px);
+    background: var(--surface); box-shadow: var(--shadow);
+    padding: 6px; gap: 6px; margin-bottom: 24px;
   }
-  .tab{ text-transform: uppercase; letter-spacing: 0.08em; font-size: 12.5px; border-bottom-width: 3px; }
-  .tab.active{ color: var(--rust); border-bottom-color: var(--brass); }
-  .tab.active .count{ background: var(--rust); }
+  .tab{
+    text-transform: uppercase; letter-spacing: 0.08em; font-size: 12.5px;
+    border: 1px solid var(--line-soft); border-radius: var(--radius); background: var(--surface-2);
+    padding: 9px 14px; margin-bottom: 0; cursor: pointer;
+    transition: background .12s ease, border-color .12s ease, color .12s ease;
+  }
+  .tab:hover:not(.active){ background: #FFF6E2; border-color: var(--brass); color: var(--ink); }
+  .tab.active{ background: var(--rust); border-color: var(--rust); color: #FFF6E2; box-shadow: inset 0 -3px 0 rgba(0,0,0,0.18); }
+  .tab.active .count{ background: rgba(255,255,255,0.22); color: #FFF6E2; }
 
   /* Cards & panels: tooled leather edge with stitching */
   .panel, .stat-card, .pasture-card, .pair-card{
@@ -1009,6 +1026,18 @@ function saveState(){
   }, 150);
 }
 
+// A toast with a button (e.g. Undo) that stays up a little longer.
+function toastAction(msg, label, fn, ms){
+  const wrap = document.getElementById('toast-wrap');
+  const el = document.createElement('div');
+  el.className = 'toast toast-action';
+  const text = document.createElement('span'); text.textContent = msg;
+  const btn = document.createElement('button'); btn.type = 'button'; btn.textContent = label;
+  btn.onclick = ()=>{ el.remove(); fn(); };
+  el.append(text, btn);
+  wrap.appendChild(el);
+  setTimeout(()=>{ el.remove(); }, ms || 10000);
+}
 function toast(msg){
   const wrap = document.getElementById('toast-wrap');
   const el = document.createElement('div');
@@ -1369,7 +1398,7 @@ var TABS = [
   { id:'pairs', label:'Pairs' },
   { id:'pastures', label:'Pastures' },
   { id:'health', label:'Health' },
-  { id:'breeding', label:'Breeding' },
+  { id:'breeding', label:'Reproduction' },
 ];
 function renderTabs(){
   const el = document.getElementById('tabs');
@@ -1386,7 +1415,55 @@ function renderTabs(){
     </button>`;
   }).join('');
 }
-function setTab(id){ if(id!=='animals') selectedAnimalIds.clear(); currentTab = id; render(); }
+function setTab(id){
+  if(id!=='animals') selectedAnimalIds.clear();
+  if(id!==currentTab) pushRoute(id);
+  currentTab = id;
+  render();
+}
+/* Browser Back / Forward: every page has its own address (#animals, #settings…).
+   Inside the Google Workspace link, google.script.history does the same for the outer page. */
+var ROUTE_NAMES = { dashboard:'home', breeding:'reproduction' };
+var ROUTE_TABS = ['dashboard','animals','pairs','pastures','health','breeding','summary','settings'];
+function tabToRoute(id){ return ROUTE_NAMES[id] || id; }
+function routeToTab(hash){
+  const h = String(hash||'').replace(/^#/, '').toLowerCase();
+  const named = Object.keys(ROUTE_NAMES).find(k=>ROUTE_NAMES[k]===h);
+  if(named) return named;
+  return ROUTE_TABS.includes(h) ? h : 'dashboard';
+}
+function gasHistory(){ return hostedInWorkspace && google.script && google.script.history ? google.script.history : null; }
+function pushRoute(id){
+  const route = tabToRoute(id);
+  try{
+    const gh = gasHistory();
+    if(gh) gh.push({ tab:id }, null, route);
+    else if(location.hash.slice(1) !== route) history.pushState({ tab:id }, '', '#' + route);
+  }catch(e){}
+}
+function routeTo(id){
+  if(typeof closeModal==='function') closeModal();
+  if(typeof closeDrawer==='function') closeDrawer();
+  if(id!=='animals') selectedAnimalIds.clear();
+  currentTab = id;
+  render();
+  window.scrollTo(0, 0);
+}
+window.addEventListener('popstate', e=>{ routeTo((e.state && e.state.tab) || routeToTab(location.hash)); });
+(function initRoute(){
+  const gh = gasHistory();
+  const start = hash=>{
+    const tab = routeToTab(hash);
+    if(tab!==currentTab){ currentTab = tab; if(storageReady) render(); }
+  };
+  if(gh){
+    try{ gh.setChangeHandler(e=> routeTo((e && e.state && e.state.tab) || routeToTab(e && e.location && e.location.hash))); }catch(e){}
+    try{ google.script.url.getLocation(loc=> start(loc && loc.hash)); }catch(e){}
+  } else {
+    start(location.hash);
+    try{ history.replaceState({ tab:currentTab }, '', '#' + tabToRoute(currentTab)); }catch(e){}
+  }
+})();
 function goHome(){
   if(typeof closeModal==='function') closeModal();
   if(typeof closeDrawer==='function') closeDrawer();
@@ -1475,7 +1552,7 @@ function getUpcomingTasks(){
   state.breeding.filter(b=> b.result!=='Open' && !b.actualCalvingDate).forEach(b=>{
     const cow = animalByTag(b.cowTagId);
     if(!cow || !isActive(cow)) return;
-    add(`calving|${b.expectedCalvingDate}`, 'Expected calving', 'Breeding', b.expectedCalvingDate, cow.id);
+    add(`calving|${b.expectedCalvingDate}`, 'Expected calving', 'Reproduction', b.expectedCalvingDate, cow.id);
   });
 
   return [...groups.values()].sort((x,y)=> x.days - y.days);
@@ -1719,7 +1796,9 @@ function viewDashboard(){
   const overdueCount = allTasks.filter(t=>t.days<0).length;
 
   // Future-dated events are upcoming, not recent.
-  const recentEvents = state.events.filter(ev=> !ev.date || ev.date <= todayStr()).sort((a,b)=> a.date<b.date?1:-1).slice(0,6);
+  const recentGroups = groupEvents(state.events.filter(ev=> !ev.date || ev.date <= todayStr()).sort((a,b)=> a.date<b.date?1:-1)).slice(0,6);
+  eventGroupCache = recentGroups;
+  const recentEvents = recentGroups;
 
   return `
     <div class="grid stat-grid">
@@ -1736,7 +1815,7 @@ function viewDashboard(){
     <div class="panel" id="upcoming-panel">
       <h2>Upcoming &amp; Overdue <button class="btn ghost sm" onclick="setTab('health')">Log an event</button></h2>
       <p class="sub">Scheduled events, follow-ups, weaning windows and expected calvings. Click one to see the animals.</p>
-      ${tasks.length===0 ? `<div class="empty-state"><div class="icon">📋</div><h3>Nothing on the books</h3><p>Add breeding, health, or calf records to see reminders here.</p></div>` :
+      ${tasks.length===0 ? `<div class="empty-state"><div class="icon">📋</div><h3>Nothing on the books</h3><p>Add reproduction, health, or calf records to see reminders here.</p></div>` :
       `<div class="task-list">
         ${tasks.map((t, idx)=>{
           const urg = taskUrgency(t.days);
@@ -1757,15 +1836,19 @@ function viewDashboard(){
 
     <div class="panel">
       <h2>Recent activity</h2>
-      <p class="sub">Latest entries across the herd. Click one to open the animal.</p>
+      <p class="sub">Latest entries across the herd. Click one to open the animal or group.</p>
       ${recentEvents.length===0 ? `<div class="empty-state"><div class="icon">🐄</div><h3>No records yet</h3><p>Health events and updates will show up here.</p></div>` :
       `<div class="task-list">
-        ${recentEvents.map(ev=>{
+        ${recentGroups.map((g, idx)=>{
+          const ev = g.first;
           const a = animalById(ev.animalId);
-          return `<div class="task-item" ${a ? `style="cursor:pointer;" title="Open ${escapeHtml(displayName(a))}" onclick="openDrawer('${a.id}')"` : ''}>
+          const attrs = g.isGroup ? `style="cursor:pointer;" title="See the animals" onclick="openEventGroup(${idx})"`
+            : (a ? `style="cursor:pointer;" title="Open ${escapeHtml(displayName(a))}" onclick="openDrawer('${a.id}')"` : '');
+          const who = g.isGroup ? `${g.events.length} head · ${escapeHtml(eventGroupLabel(g))}` : escapeHtml(displayName(a));
+          return `<div class="task-item" ${attrs}>
             <div class="task-dot ok"></div>
             <div class="task-body">
-              <div class="task-title">${escapeHtml(ev.type)}${ev.vaccine ? ' · '+escapeHtml(ev.vaccine) : ''} — ${escapeHtml(displayName(a))}</div>
+              <div class="task-title">${escapeHtml(ev.type)}${ev.vaccine ? ' · '+escapeHtml(ev.vaccine) : ''} — ${who}</div>
               <div class="task-sub">${escapeHtml(ev.notes||'')}</div>
             </div>
             <div class="task-when ok">${fmtDate(ev.date)}</div>
@@ -1919,23 +2002,22 @@ function viewPastures(){
   return `
     <div class="section-title">Pastures</div>
     <p class="section-desc">Where the herd is grazing. Add, edit, move groups or delete pastures in <b>Settings ⚙ → Pasture library</b>.</p>
+    ${recentMovesHtml()}
     ${names.length===0 && unassigned.length===0 ? `<div class="empty-state"><div class="icon">🌾</div><h3>No pastures yet</h3><p>Add pastures in Settings ⚙ → Pasture library.</p></div>` :
     `<div class="pasture-grid">
       ${names.map((name, idx)=>{
         const animals = groups[name];
         const lib = state.pastures.find(p=>p.name===name);
         return `<div class="pasture-card">
-          ${lib && lib.photo ? `<img src="${lib.photo}" alt="${escapeHtml(name)}" class="pasture-photo">` : ''}
           <div class="pasture-head">
             <div>
               <div class="pasture-name">${escapeHtml(name)}</div>
               <div class="pasture-meta">${animals.length} head${lib && lib.acres? ' · '+escapeHtml(lib.acres)+' ac':''}</div>
             </div>
           </div>
-          ${lib && lib.notes ? `<p class="pasture-notes">${escapeHtml(lib.notes)}</p>` : ''}
+          <p class="pasture-notes" title="${escapeHtml((lib && lib.notes) || '')}">${escapeHtml((lib && lib.notes) || '')}</p>
           <div class="pasture-tags">
-            ${animals.slice(0,14).map(a=>`<span style="cursor:pointer;" onclick="openDrawer('${a.id}')">${eartag(a)}</span>`).join('')}
-            ${animals.length>14 ? `<span class="status-tag" style="cursor:pointer;" onclick="viewAnimalsInPasture(pastureGroupNamesCache[${idx}])">+${animals.length-14} more</span>` : ''}
+            ${animals.slice(0,40).map(a=>`<span style="cursor:pointer;" onclick="openDrawer('${a.id}')">${eartag(a)}</span>`).join('')}
             ${animals.length===0 ? `<span class="muted" style="font-size:12.5px;">No animals currently assigned</span>` : ''}
           </div>
           <div class="pasture-actions">
@@ -1950,9 +2032,9 @@ function viewPastures(){
             <div class="pasture-meta">${unassigned.length} head with no pasture set</div>
           </div>
         </div>
+        <p class="pasture-notes"></p>
         <div class="pasture-tags">
-          ${unassigned.slice(0,14).map(a=>`<span style="cursor:pointer;" onclick="openDrawer('${a.id}')">${eartag(a)}</span>`).join('')}
-          ${unassigned.length>14 ? `<span class="status-tag" style="cursor:pointer;" onclick="viewAnimalsInPasture('__none__')">+${unassigned.length-14} more</span>` : ''}
+          ${unassigned.slice(0,40).map(a=>`<span style="cursor:pointer;" onclick="openDrawer('${a.id}')">${eartag(a)}</span>`).join('')}
         </div>
         <div class="pasture-actions">
           <button class="btn rust sm" onclick="viewAnimalsInPasture('__none__')">View animals (${unassigned.length})</button>
@@ -2182,9 +2264,10 @@ function deletePasture(id){
 }
 
 /* ---------- Move group / bulk move modal ---------- */
-var moveModalIds = [];
+var moveModalIds = [], moveModalTitle = '';
 function openMoveModal(title, animalIds){
   moveModalIds = animalIds.slice();
+  moveModalTitle = title;
   const body = `
     <p class="hint" style="margin-bottom:14px; font-size:12.5px;">${escapeHtml(title)}</p>
     <div class="field">
@@ -2208,29 +2291,164 @@ function confirmMove(){
   const input = document.getElementById('move-dest-input');
   const dest = input.value.trim();
   if(!dest){ toast('Choose a pasture'); return; }
+  openMoveReview(dest);
+}
+function confirmUnassignMove(){ openMoveReview(''); }
+/* Every group move is reviewed first. If the destination already holds other animals,
+   the groups would mix, so the pasture's name must be typed before Move unlocks. */
+function openMoveReview(dest){
+  const moving = moveModalIds.map(animalById).filter(Boolean);
+  const movingIds = new Set(moving.map(a=>a.id));
+  const fromNames = [...new Set(moving.map(a=>(a.pasture||'').trim() || 'No pasture'))];
+  const fromLabel = fromNames.length===1 ? fromNames[0] : `${fromNames.length} pastures`;
+  const already = dest ? state.animals.filter(a=>isActive(a) && (a.pasture||'').trim()===dest && !movingIds.has(a.id)) : [];
+  const n = moving.length, head = `${n} head`;
+  const toLabel = dest || 'No pasture (unassigned)';
+  const body = `
+    <div style="display:flex; align-items:center; gap:12px; flex-wrap:wrap; background:var(--surface-2); padding:14px 16px; border-radius:var(--radius); margin-bottom:14px;">
+      <div style="flex:1; min-width:120px;"><div class="hint" style="margin:0;">From</div><div style="font-weight:700;">${escapeHtml(fromLabel)}</div></div>
+      <div style="font-size:22px; color:var(--rust);">→</div>
+      <div style="flex:1; min-width:120px;"><div class="hint" style="margin:0;">To</div><div style="font-weight:700;">${escapeHtml(toLabel)}</div></div>
+      <div style="width:100%; font-size:13px;">Moving <b>${head}</b>.</div>
+    </div>
+    ${already.length ? `<div style="border:1px solid var(--danger); background:rgba(165,48,30,0.07); border-radius:var(--radius); padding:12px 14px; margin-bottom:14px;">
+        <div style="font-weight:700; color:var(--danger); margin-bottom:4px;">⚠ ${escapeHtml(dest)} already has ${already.length} other head</div>
+        <p class="hint" style="margin:0 0 10px;">These ${head} will be mixed in with them. To confirm, type the pasture name <b>${escapeHtml(dest)}</b>:</p>
+        <input type="text" id="move-confirm-input" autocomplete="off" placeholder="${escapeHtml(dest)}" style="width:100%;" oninput="document.getElementById('move-go-btn').disabled = this.value.trim().toLowerCase() !== ${escapeHtml(JSON.stringify(dest.toLowerCase()))};">
+      </div>` : ''}
+    <p class="hint" style="margin:0 0 4px;">You can undo this move afterwards from the message that appears, or from <b>Recent moves</b> on the Pastures page.</p>
+    <div class="modal-actions">
+      <button type="button" class="btn ghost" onclick="openMoveModal(moveModalTitle, moveModalIds)">← Back</button>
+      <div style="flex:1;"></div>
+      <button type="button" class="btn rust" id="move-go-btn" ${already.length ? 'disabled' : ''} onclick="performMove(${escapeHtml(JSON.stringify(dest))})">${dest ? `Move ${head}` : `Unassign ${head}`}</button>
+    </div>`;
+  document.getElementById('modal-root').innerHTML = modalShell(dest ? 'Confirm move' : 'Confirm unassign', body);
+  const box = document.getElementById('move-confirm-input');
+  if(box) setTimeout(()=>box.focus(), 0);
+}
+function performMove(dest){
+  const record = recordMove(dest, moveModalIds);
   moveModalIds.forEach(id=>{ const a=animalById(id); if(a) a.pasture = dest; });
   const count = moveModalIds.length;
   selectedAnimalIds.clear();
   saveState();
   closeModal();
   render();
-  toast(`Moved ${count} animal${count===1?'':'s'} to ${dest}`);
+  const msg = dest ? `Moved ${count} animal${count===1?'':'s'} to ${dest}` : `Removed pasture for ${count} animal${count===1?'':'s'}`;
+  toastAction(msg, 'Undo', ()=>undoMove(record.id), 12000);
 }
-function confirmUnassignMove(){
-  moveModalIds.forEach(id=>{ const a=animalById(id); if(a) a.pasture = ''; });
-  const count = moveModalIds.length;
-  selectedAnimalIds.clear();
+/* Recent moves are kept on this device (last 10) so a wrong move can be put back. */
+var MOVE_HISTORY_KEY = 'herd-move-history';
+function loadMoves(){ try{ return JSON.parse(localStorage.getItem(MOVE_HISTORY_KEY) || '[]') || []; }catch(e){ return []; } }
+function saveMoves(list){ try{ localStorage.setItem(MOVE_HISTORY_KEY, JSON.stringify(list.slice(0, 10))); }catch(e){} }
+function recordMove(dest, ids){
+  const items = ids.map(id=>{ const a = animalById(id); return a ? { id, from:(a.pasture||'').trim() } : null; }).filter(Boolean);
+  const fromNames = [...new Set(items.map(i=> i.from || 'No pasture'))];
+  const m = { id:uid(), at:new Date().toISOString(), to:dest, items, fromLabel: fromNames.length===1 ? fromNames[0] : `${fromNames.length} pastures` };
+  saveMoves([m, ...loadMoves()]);
+  return m;
+}
+// Put moved animals back, but only those still where this move left them (a later move wins).
+function undoMove(moveId){
+  const list = loadMoves();
+  const m = list.find(x=>x.id===moveId);
+  if(!m){ toast('That move was already undone'); return; }
+  let restored = 0, skipped = 0;
+  m.items.forEach(it=>{
+    const a = animalById(it.id);
+    if(a && (a.pasture||'').trim()===m.to){ a.pasture = it.from; restored++; } else skipped++;
+  });
+  saveMoves(list.filter(x=>x.id!==moveId));
   saveState();
-  closeModal();
   render();
-  toast(`Removed pasture for ${count} animal${count===1?'':'s'}`);
+  toast(`Undone — ${restored} animal${restored===1?'':'s'} back in ${m.fromLabel}` + (skipped ? ` (${skipped} had moved since and were left alone)` : ''));
+}
+function recentMovesHtml(){
+  const weekAgo = Date.now() - 7*86400000;
+  const moves = loadMoves().filter(m=> Date.parse(m.at) > weekAgo).slice(0, 5);
+  if(!moves.length) return '';
+  return `<div class="panel" style="padding:14px 18px; margin-bottom:16px;">
+    <h2 style="font-size:15px;">Recent moves <span class="muted" style="font-size:11.5px; font-weight:500; font-family:inherit;">on this device</span></h2>
+    <div class="task-list">
+      ${moves.map(m=>`<div class="task-item">
+        <div class="task-body">
+          <div class="task-title">${m.items.length} head · ${escapeHtml(m.fromLabel)} → ${escapeHtml(m.to || 'No pasture')}</div>
+          <div class="task-sub">${escapeHtml(new Date(m.at).toLocaleString([], { month:'short', day:'numeric', hour:'numeric', minute:'2-digit' }))}</div>
+        </div>
+        <button type="button" class="btn ghost sm" onclick="undoMove('${m.id}')">Undo</button>
+      </div>`).join('')}
+    </div>
+  </div>`;
 }
 
 /* =========================================================
    HEALTH
 ========================================================= */
+/* Events logged for a group together show as one row. New group events share a groupId;
+   older records without one are grouped when type, date, details and notes all match. */
+function eventGroupKey(ev){
+  if(ev.groupId) return 'g:' + ev.groupId;
+  if(ev.individual) return 'i:' + ev.id;
+  return 'l:' + [ev.type, ev.date, ev.vaccine||'', ev.pregResult||'', ev.notes||'', ev.nextDue||''].join('|');
+}
+function groupEvents(events){
+  const map = new Map();
+  events.forEach(ev=>{
+    const k = eventGroupKey(ev);
+    if(!map.has(k)) map.set(k, { key:k, events:[] });
+    map.get(k).events.push(ev);
+  });
+  return [...map.values()].map(g=>{
+    const first = g.events[0];
+    return Object.assign(g, { first, isGroup: g.events.length > 1 || !!first.groupId });
+  });
+}
+function eventGroupLabel(g){
+  if(g.first.groupLabel) return g.first.groupLabel;
+  const names = [...new Set(g.events.map(ev=> ((animalById(ev.animalId)||{}).pasture||'').trim()))];
+  if(names.length===1) return names[0] || 'No pasture';
+  return `${names.length} pastures`;
+}
+function eventDetail(ev){ return ev.vaccine || ev.pregResult || ''; }
+var eventGroupCache = [];
+function openEventGroup(idx){
+  const g = eventGroupCache[idx];
+  if(!g) return;
+  const animals = g.events.map(ev=>animalById(ev.animalId)).filter(Boolean).sort(byName);
+  const ev = g.first, detail = eventDetail(ev);
+  const body = `
+    <p class="hint" style="margin:0 0 8px; font-size:12.5px;">${fmtDate(ev.date)} · ${escapeHtml(eventGroupLabel(g))} · ${g.events.length} head${ev.nextDue ? ' · next due ' + fmtDate(ev.nextDue) : ''}</p>
+    ${ev.notes ? `<p style="margin:0 0 14px; font-size:13px; background:var(--surface-2); padding:8px 10px; border-radius:var(--radius); white-space:pre-wrap;">${escapeHtml(ev.notes)}</p>` : ''}
+    <div style="border:1px solid var(--line-soft); border-radius:var(--radius); background:var(--white); max-height:380px; overflow-y:auto;">
+      ${animals.map(a=>`<div class="mini-row" style="padding:8px 10px; cursor:pointer;" onclick="closeModal(); openDrawer('${a.id}')">
+        <span>${eartag(a)} <span class="muted" style="font-size:11.5px;">${escapeHtml(classLabel(a))}</span></span>
+        <span class="d">${a.pasture ? '📍 '+escapeHtml(a.pasture) : 'No pasture'}</span>
+      </div>`).join('')}
+    </div>
+    <div class="modal-actions">
+      <button type="button" class="btn danger" style="margin-right:auto;" onclick="deleteEventGroup(${idx})">Delete for all ${g.events.length}</button>
+      <button type="button" class="btn rust" onclick="closeModal()">Done</button>
+    </div>`;
+  document.getElementById('modal-root').innerHTML = modalShell(escapeHtml(ev.type + (detail ? ' · ' + detail : '')), body);
+}
+function deleteEventGroup(idx){
+  const g = eventGroupCache[idx];
+  if(!g) return;
+  if(!confirm(`Delete this ${g.first.type} record for all ${g.events.length} animals?`)) return;
+  const ids = new Set(g.events.map(ev=>ev.id));
+  state.events = state.events.filter(ev=>!ids.has(ev.id));
+  saveState();
+  closeModal();
+  render();
+  toast(`Deleted ${g.first.type} for ${ids.size} animals`);
+}
+function groupHeadHtml(g){
+  return `<span class="group-pill">👥 ${g.events.length} head</span> <span class="muted" style="font-size:12px;">${escapeHtml(eventGroupLabel(g))}</span>`;
+}
 function viewHealth(){
   const events = [...state.events].sort((a,b)=> a.date<b.date?1:-1);
+  const groups = groupEvents(events);
+  eventGroupCache = groups;
   return `
     <div class="toolbar">
       <div class="section-title" style="margin:0;">Health &amp; event log</div>
@@ -2240,13 +2458,15 @@ function viewHealth(){
     ${events.length===0 ? `<div class="empty-state"><div class="icon">💉</div><h3>No events logged</h3><p>Track vaccinations, treatments, weights, and more.</p></div>` :
     `<div class="panel" style="padding:6px 22px 10px;">
       <table class="ledger">
-        <thead><tr><th>Date</th><th>Animal</th><th>Type</th><th>Notes</th><th>Next due</th></tr></thead>
+        <thead><tr><th>Date</th><th>Animal / group</th><th>Type</th><th>Notes</th><th>Next due</th></tr></thead>
         <tbody>
-          ${events.map(ev=>{
+          ${groups.map((g, idx)=>{
+            const ev = g.first;
             const a = animalById(ev.animalId);
-            return `<tr onclick="${a?`openDrawer('${a.id}')`:''}">
+            const click = g.isGroup ? `openEventGroup(${idx})` : (a ? `openDrawer('${a.id}')` : '');
+            return `<tr onclick="${click}">
               <td class="num-cell">${fmtDate(ev.date)}</td>
-              <td>${a? eartag(a) : '<span class="muted">Unknown</span>'}</td>
+              <td>${g.isGroup ? groupHeadHtml(g) : (a? eartag(a) : '<span class="muted">Unknown</span>')}</td>
               <td>${escapeHtml(ev.type)}${ev.vaccine || ev.pregResult ? `<div class="muted" style="font-size:11.5px;margin-top:2px;">${escapeHtml(ev.vaccine || ev.pregResult)}</div>`:''}</td>
               <td class="muted">${escapeHtml(ev.notes||'—')}</td>
               <td class="num-cell">${ev.nextDue? fmtDate(ev.nextDue) : '—'}</td>
@@ -2265,11 +2485,11 @@ function viewBreeding(){
   const records = [...state.breeding].sort((a,b)=> a.breedingDate<b.breedingDate?1:-1);
   return `
     <div class="toolbar">
-      <div class="section-title" style="margin:0;">Breeding &amp; calving</div>
+      <div class="section-title" style="margin:0;">Reproduction &amp; calving</div>
       <div style="flex:1;"></div>
-      <button class="btn rust" onclick="openBreedingModal()">+ Add breeding record</button>
+      <button class="btn rust" onclick="openBreedingModal()">+ Add reproduction record</button>
     </div>
-    ${records.length===0 ? `<div class="empty-state"><div class="icon">📅</div><h3>No breeding records</h3><p>Log a breeding date to auto-calculate the expected calving date (${GESTATION_DAYS}-day gestation).</p></div>` :
+    ${records.length===0 ? `<div class="empty-state"><div class="icon">📅</div><h3>No reproduction records</h3><p>Log a breeding date to auto-calculate the expected calving date (${GESTATION_DAYS}-day gestation).</p></div>` :
     `<div class="panel" style="padding:6px 22px 10px;">
       <table class="ledger">
         <thead><tr><th>Cow</th><th>Method</th><th>Sire</th><th>Bred</th><th>Expected calving</th><th>Result</th></tr></thead>
@@ -2745,7 +2965,7 @@ function openDriveModal(){
 var pendingImport = null;
 function herdCounts(d){
   const n = (k, w)=>{ const c = (d[k]||[]).length; return c + ' ' + w + (c===1 ? '' : 's'); };
-  return [n('animals','animal'), n('events','health event'), n('breeding','breeding record'), n('pastures','pasture')].join(', ');
+  return [n('animals','animal'), n('events','health event'), n('breeding','reproduction record'), n('pastures','pasture')].join(', ');
 }
 function backupSectionHtml(){
   return `
@@ -3169,7 +3389,7 @@ function viewSettings(){
         <p class="hint" style="margin:0 0 10px;">See the sync status, choose the Drive folder, back up now, or export and import a backup file.</p>
         <button type="button" class="btn ghost" onclick="openDriveModal()">Open Google Drive sync</button>`)}
       ${settingsSection('danger', '⚠️', '<span style="color:var(--danger);">Danger zone</span>', 'Reset all data', null, `
-        <p class="hint" style="margin:0 0 12px;">Permanently deletes every animal, pasture, health record, and breeding record stored in this app. This can't be undone.</p>
+        <p class="hint" style="margin:0 0 12px;">Permanently deletes every animal, pasture, health record, and reproduction record stored in this app. This can't be undone.</p>
         <button type="button" id="reset-hold-btn" class="hold-reset-btn"
           onmousedown="startResetHold()" onmouseup="cancelResetHold()" onmouseleave="cancelResetHold()"
           ontouchstart="startResetHold(event)" ontouchend="cancelResetHold()" ontouchcancel="cancelResetHold()">
@@ -3930,8 +4150,12 @@ function saveEvent(evt){
     const vaccines = type==='Vaccination' ? selectedVaccines(f) : [];
     const vaccine = vaccines.join(', ');
     const pregResult = type==='Pregnancy Check' ? f.pregResult.value : '';
+    // One group id ties the records together so the log shows them as one group event.
+    const groupId = uid();
+    const groupPastures = [...new Set(checked.map(id=> ((animalById(id)||{}).pasture||'').trim()))];
+    const groupLabel = groupPastures.length===1 ? groupPastures[0] : '';
     checked.forEach(animalId=>{
-      const ev = { id: uid(), animalId, type, date, notes, nextDue, vaccine, vaccines: vaccines.slice() };
+      const ev = { id: uid(), animalId, type, date, notes, nextDue, vaccine, vaccines: vaccines.slice(), groupId, groupLabel };
       if(pregResult){ ev.pregResult = pregResult; applyPregResult(animalById(animalId), pregResult); }
       state.events.push(ev);
       if(type==='Weaning'){
@@ -3971,6 +4195,7 @@ function saveEvent(evt){
     nextDue: f.nextDue.value || null,
     vaccine: vaccines.join(', '),
     vaccines,
+    individual: true,
   };
   if(ev.type==='Pregnancy Check'){
     ev.pregResult = f.pregResult.value;
@@ -4095,7 +4320,7 @@ function openBreedingModal(editId, presetCowTagId){
     <form onsubmit="saveBreeding(event, '${b.id}', ${editing?'true':'false'})">
       <input type="hidden" id="breeding-mode-input" value="individual">
       <div class="field">
-        <label>Breeding for</label>
+        <label>Record for</label>
         ${editing ? `<p class="hint" style="margin:0;">Editing a single record.</p>` : `
         <div class="chip-toggle">
           <button type="button" class="chip active" id="mode-individual-btn" onclick="setBreedingMode('individual')">Individual animal</button>
@@ -4113,7 +4338,7 @@ function openBreedingModal(editId, presetCowTagId){
       <div class="field">
         <label>Bull(s) turned out</label>
         ${bullsField}
-        <p class="hint">Bulls already on an open breeding record (no calving logged yet) are greyed out so they don't get double-booked.</p>
+        <p class="hint">Bulls already on an open reproduction record (no calving logged yet) are greyed out so they don't get double-booked.</p>
       </div>
       <div class="field"><label>Other sire (AI / not in herd)</label><input type="text" name="sireOther" value="${escapeHtml(otherValue)}" placeholder="e.g. AI — semen ID"></div>
       <div class="field"><label>Breeding date *</label><input type="date" name="breedingDate" required value="${b.breedingDate}"></div>
@@ -4126,7 +4351,7 @@ function openBreedingModal(editId, presetCowTagId){
       </div>
     </form>
   `;
-  document.getElementById('modal-root').innerHTML = modalShell(editing?'Edit breeding record':'Add breeding record', body);
+  document.getElementById('modal-root').innerHTML = modalShell(editing?'Edit reproduction record':'Add reproduction record', body);
 }
 function setBreedingMode(mode){
   const indivBtn = document.getElementById('mode-individual-btn');
@@ -4172,7 +4397,7 @@ function saveBreeding(evt, id, editing){
     saveState();
     closeModal();
     render();
-    toast(`Added breeding records for ${checked.length} animal${checked.length===1?'':'s'}`);
+    toast(`Added reproduction records for ${checked.length} animal${checked.length===1?'':'s'}`);
     return;
   }
 
@@ -4198,10 +4423,10 @@ function saveBreeding(evt, id, editing){
   saveState();
   closeModal();
   render();
-  toast(editing? 'Breeding record updated' : 'Breeding record added');
+  toast(editing? 'Reproduction record updated' : 'Reproduction record added');
 }
 function deleteBreeding(id){
-  if(!confirm('Delete this breeding record?')) return;
+  if(!confirm('Delete this reproduction record?')) return;
   state.breeding = state.breeding.filter(b=>b.id!==id);
   saveState();
   closeModal();
