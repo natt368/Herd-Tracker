@@ -2219,6 +2219,8 @@ function modalShell(title, bodyHtml){
 
 /* ---------- Google Drive sync ---------- */
 var DRIVE_SCRIPT_VERSION = 3;
+// The Workspace script has its own version: 4 added choosing the data folder and Drive backups.
+var WORKSPACE_SCRIPT_VERSION = 4;
 // Merge logic shared by both Apps Script backends: replay one device's changes (base -> local) onto the current file.
 var GAS_MERGE_SRC = `const KEYS_ = {
   animals: function (r) { return r.id; },
@@ -2333,7 +2335,9 @@ function workspaceScriptSource(){
 const APP_URL = ${JSON.stringify(appUrl)};
 const FILE_NAME = 'rangebook-herd-data.json';
 const APP_CACHE_NAME = 'rangebook-app-cache.html';
-const VERSION = ${DRIVE_SCRIPT_VERSION};
+const BACKUP_FOLDER_NAME = 'Rangebook Backups';
+const AUTO_BACKUPS_KEPT = 100;
+const VERSION = ${WORKSPACE_SCRIPT_VERSION};
 
 function getOrCreate_(name, initial) {
   const files = DriveApp.getFilesByName(name);
@@ -2366,8 +2370,112 @@ function doGet() {
 
 ${GAS_MERGE_SRC}
 
+// The herd data file. Remembered by ID, so it keeps working after it's moved to another folder.
+function dataFile_() {
+  const props = PropertiesService.getScriptProperties();
+  const id = props.getProperty('dataFileId');
+  if (id) {
+    try { const f = DriveApp.getFileById(id); if (!f.isTrashed()) return f; } catch (err) {}
+  }
+  const file = getOrCreate_(FILE_NAME, '{}');
+  props.setProperty('dataFileId', file.getId());
+  return file;
+}
+
+function dataFolder_() {
+  const parents = dataFile_().getParents();
+  return parents.hasNext() ? parents.next() : DriveApp.getRootFolder();
+}
+
+function folderInfo_(folder) {
+  return { id: folder.getId(), name: folder.getName(), url: folder.getUrl() };
+}
+
+// Only the script's owner can browse their Drive folders or move the data file.
+function requireOwner_() {
+  if (Session.getActiveUser().getEmail() !== Session.getEffectiveUser().getEmail()) {
+    throw new Error('Only ' + Session.getEffectiveUser().getEmail() + ' can change where the data is saved.');
+  }
+}
+
+function rbListFolders(folderId) {
+  requireOwner_();
+  const root = DriveApp.getRootFolder();
+  const folder = folderId ? DriveApp.getFolderById(folderId) : root;
+  const folders = [];
+  const it = folder.getFolders();
+  while (it.hasNext() && folders.length < 300) {
+    const f = it.next();
+    if (f.getName() !== BACKUP_FOLDER_NAME) folders.push(folderInfo_(f));
+  }
+  folders.sort(function (a, b) { return a.name.toLowerCase() < b.name.toLowerCase() ? -1 : 1; });
+  const parents = folder.getParents();
+  const isRoot = folder.getId() === root.getId();
+  return { folder: folderInfo_(folder), parentId: !isRoot && parents.hasNext() ? parents.next().getId() : null, folders: folders };
+}
+
+// Move the data file into a folder, given its ID or a Drive folder link.
+function rbSetFolder(folderIdOrLink) {
+  requireOwner_();
+  const text = String(folderIdOrLink || '').trim();
+  let id = text;
+  if (text.indexOf('/folders/') >= 0) id = text.split('/folders/')[1];
+  else if (text.indexOf('id=') >= 0) id = text.split('id=')[1];
+  id = id.split(/[/?&#]/)[0];
+  if (!id) throw new Error('That is not a Google Drive folder link.');
+  let folder;
+  try { folder = id === 'root' ? DriveApp.getRootFolder() : DriveApp.getFolderById(id); }
+  catch (err) { throw new Error("Couldn't open that folder. Check the link, and that " + Session.getEffectiveUser().getEmail() + ' can edit it.'); }
+  const lock = LockService.getScriptLock();
+  lock.waitLock(30000);
+  try {
+    dataFile_().moveTo(folder);
+  } finally {
+    lock.releaseLock();
+  }
+  return folderInfo_(folder);
+}
+
+function backupFolder_(create) {
+  const parent = dataFolder_();
+  const found = parent.getFoldersByName(BACKUP_FOLDER_NAME);
+  if (found.hasNext()) return found.next();
+  return create ? parent.createFolder(BACKUP_FOLDER_NAME) : null;
+}
+
+// Save a dated copy of the herd data in the "Rangebook Backups" folder next to the data file.
+// Automatic backups are skipped when nothing has changed, and only the newest AUTO_BACKUPS_KEPT are kept.
+function rbBackup(auto) {
+  const lock = LockService.getScriptLock();
+  lock.waitLock(30000);
+  try {
+    const props = PropertiesService.getScriptProperties();
+    const content = dataFile_().getBlob().getDataAsString();
+    const hash = Utilities.base64Encode(Utilities.computeDigest(Utilities.DigestAlgorithm.MD5, content));
+    if (auto && props.getProperty('backupHash') === hash) {
+      return { skipped: true, at: props.getProperty('backupAt'), name: props.getProperty('backupName') };
+    }
+    const folder = backupFolder_(true);
+    const stamp = Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyy-MM-dd HH-mm-ss');
+    const name = (auto ? 'rangebook-auto-backup ' : 'rangebook-backup ') + stamp + '.json';
+    folder.createFile(name, content, MimeType.PLAIN_TEXT);
+    const at = new Date().toISOString();
+    props.setProperties({ backupHash: hash, backupAt: at, backupName: name });
+    if (auto) {
+      const autos = [];
+      const it = folder.searchFiles("title contains 'rangebook-auto-backup' and trashed = false");
+      while (it.hasNext()) autos.push(it.next());
+      autos.sort(function (a, b) { return a.getName() < b.getName() ? 1 : -1; });
+      autos.slice(AUTO_BACKUPS_KEPT).forEach(function (f) { f.setTrashed(true); });
+    }
+    return { skipped: false, at: at, name: name, folderUrl: folder.getUrl() };
+  } finally {
+    lock.releaseLock();
+  }
+}
+
 function rbLoad() {
-  return getOrCreate_(FILE_NAME, '{}').getBlob().getDataAsString();
+  return dataFile_().getBlob().getDataAsString();
 }
 
 function rbSave(localJson, baseJson) {
@@ -2375,7 +2483,7 @@ function rbSave(localJson, baseJson) {
   lock.waitLock(30000);
   try {
     const parse = function (t) { try { return JSON.parse(t || '{}') || {}; } catch (err) { return {}; } };
-    const file = getOrCreate_(FILE_NAME, '{}');
+    const file = dataFile_();
     const merged = JSON.stringify(merge_(parse(baseJson), parse(localJson), parse(file.getBlob().getDataAsString())));
     file.setContent(merged);
     return merged;
@@ -2385,7 +2493,14 @@ function rbSave(localJson, baseJson) {
 }
 
 function rbInfo() {
-  return { url: ScriptApp.getService().getUrl(), user: Session.getActiveUser().getEmail(), version: VERSION };
+  const props = PropertiesService.getScriptProperties();
+  const user = Session.getActiveUser().getEmail(), owner = Session.getEffectiveUser().getEmail();
+  const backups = backupFolder_(false);
+  return {
+    url: ScriptApp.getService().getUrl(), user: user, owner: owner, canManage: !!user && user === owner, version: VERSION,
+    file: { name: dataFile_().getName(), url: dataFile_().getUrl() }, folder: folderInfo_(dataFolder_()),
+    backup: { at: props.getProperty('backupAt'), name: props.getProperty('backupName'), folderUrl: backups ? backups.getUrl() : null }
+  };
 }
 `;
 }
@@ -2680,6 +2795,7 @@ function openWorkspaceDriveModal(){
       <label style="margin-bottom:6px;">Share with your crew</label>
       <p class="hint" style="margin:0;">Loading…</p>
     </div>
+    <div id="workspace-storage"></div>
     ${backupSectionHtml()}
     <div class="modal-actions">
       <button type="button" class="btn ghost" onclick="testDriveConnection()">Test connection</button>
@@ -2695,10 +2811,12 @@ function openWorkspaceDriveModal(){
       <input type="text" readonly class="mono" style="width:100%; font-size:12px;" value="${escapeHtml(info.url)}" onfocus="this.select()">
       <button type="button" class="btn ghost sm" style="margin-top:8px;" onclick="copyText(${escapeHtml(JSON.stringify(info.url))}, 'Link copied')">Copy link</button>`;
     driveScriptVersion = (info && info.version) || 2;
-    if(driveScriptVersion < DRIVE_SCRIPT_VERSION) el.insertAdjacentHTML('beforebegin', `
+    const storage = document.getElementById('workspace-storage');
+    if(storage && driveScriptVersion >= 4){ lastDriveBackup = info.backup || lastDriveBackup; storage.innerHTML = workspaceStorageHtml(info); updateBackupLast(); }
+    if(driveScriptVersion < WORKSPACE_SCRIPT_VERSION) el.insertAdjacentHTML('beforebegin', `
       <div class="field" style="background:var(--tag-bg); padding:12px 14px; border-radius:var(--radius); margin-bottom:16px;">
         <label style="margin-bottom:6px; color:var(--tag-dark);">Update your Workspace script</label>
-        <p class="hint" style="margin:0 0 8px; color:var(--ink-soft);">Your script is an older version that doesn't share tag colours between people yet. Updating takes a minute and keeps the same link:</p>
+        <p class="hint" style="margin:0 0 8px; color:var(--ink-soft);">Your script is an older version. Update it to choose which Drive folder the data is saved in, and to get automatic backups every minute. Updating takes a minute and keeps the same link:</p>
         <ol style="margin:0; padding-left:18px; font-size:12.5px; color:var(--ink-soft); line-height:1.7;">
           <li><button type="button" class="btn ghost sm" onclick="copyWorkspaceScript()">Copy updated script</button></li>
           <li>Open your project at <a href="https://script.google.com" target="_blank" rel="noopener" style="color:var(--rust); font-weight:600;">script.google.com</a>, replace all the code with the copied script, and save.</li>
@@ -2708,6 +2826,93 @@ function openWorkspaceDriveModal(){
   }).catch(()=>{
     const el = document.getElementById('workspace-info');
     if(el) el.innerHTML = `<label style="margin-bottom:6px;">Share with your crew</label><p class="hint" style="margin:0;">Send your crew the same link you used to open this app.</p>`;
+  });
+}
+/* Workspace edition (script v4+): choose the data folder, and dated backups in Drive. */
+var lastDriveBackup = null;
+function workspaceStorageHtml(info){
+  const box = 'background:var(--surface-2); padding:12px 14px; border-radius:var(--radius); margin-bottom:16px;';
+  const folder = info.folder || {};
+  const backupsLink = info.backup && info.backup.folderUrl
+    ? `<a href="${escapeHtml(info.backup.folderUrl)}" target="_blank" rel="noopener" style="color:var(--rust); font-weight:600;">Rangebook Backups</a>`
+    : '<b>Rangebook Backups</b>';
+  return `
+    <div class="field" style="${box}">
+      <label style="margin-bottom:6px;">Where the data is saved</label>
+      <p class="hint" style="margin:0 0 8px;">📁 <a href="${escapeHtml(folder.url||'#')}" target="_blank" rel="noopener" style="color:var(--rust); font-weight:600;">${escapeHtml(folder.name||'My Drive')}</a> › <span class="mono">${escapeHtml((info.file && info.file.name) || 'rangebook-herd-data.json')}</span></p>
+      ${info.canManage
+        ? `<button type="button" class="btn ghost sm" onclick="openFolderPicker('')">Change folder</button><div id="folder-picker"></div>`
+        : `<p class="hint" style="margin:0;">Only ${escapeHtml(info.owner||'the person who set up the script')} can change the folder.</p>`}
+    </div>
+    <div class="field" style="${box}">
+      <label style="margin-bottom:6px;">Drive backups</label>
+      <p class="hint" style="margin:0 0 8px;">While Rangebook is open, a dated copy of the herd is saved to ${backupsLink} (inside the data folder) every minute, whenever something has changed. The newest 100 automatic copies are kept. Copies made with <b>Back up now</b> are kept until you delete them. To restore one, download it from Drive and use <b>Import</b> below.</p>
+      <p class="hint" id="backup-last" style="margin:0 0 8px;"></p>
+      <button type="button" class="btn rust sm" onclick="backupNow(this)">Back up now</button>
+    </div>`;
+}
+function updateBackupLast(){
+  const el = document.getElementById('backup-last');
+  if(!el) return;
+  const b = lastDriveBackup;
+  el.innerHTML = b && b.at
+    ? `Last backup: <b>${escapeHtml(new Date(b.at).toLocaleString())}</b>${b.name ? ' · <span class="mono" style="font-size:11.5px;">'+escapeHtml(b.name)+'</span>' : ''}`
+    : 'No backups yet.';
+}
+function backupNow(btn){
+  if(btn){ btn.disabled = true; btn.textContent = 'Backing up…'; }
+  const done = ()=>{ if(btn){ btn.disabled = false; btn.textContent = 'Back up now'; } };
+  // Save any pending changes first so the backup includes them.
+  driveSync().catch(()=>{})
+    .then(()=>gasCall('rbBackup', false))
+    .then(r=>{ lastDriveBackup = r; updateBackupLast(); toast('Backed up to Google Drive'); })
+    .catch(e=>toast('Backup failed: ' + ((e && e.message) || 'error')))
+    .finally(done);
+}
+function autoBackupToDrive(){
+  if(!hostedInWorkspace || !storageReady || !(driveScriptVersion >= 4)) return;
+  gasCall('rbBackup', true).then(r=>{ lastDriveBackup = r; updateBackupLast(); }).catch(()=>{});
+}
+setInterval(autoBackupToDrive, 60000);
+function openFolderPicker(folderId){
+  const el = document.getElementById('folder-picker');
+  if(!el) return;
+  el.innerHTML = '<p class="hint" style="margin:10px 0 0;">Loading folders…</p>';
+  gasCall('rbListFolders', folderId || '').then(res=>{
+    const id = v => escapeHtml(JSON.stringify(v));
+    const rowStyle = 'display:block; width:100%; text-align:left; padding:9px 12px; border:0; border-bottom:1px solid var(--line-soft); background:none; cursor:pointer; font:inherit; font-size:13px; color:var(--ink);';
+    el.innerHTML = `
+      <div style="border:1px solid var(--line-soft); border-radius:var(--radius); margin-top:10px; background:var(--surface); overflow:hidden;">
+        <div style="display:flex; align-items:center; gap:8px; padding:8px 10px; border-bottom:1px solid var(--line-soft); background:var(--surface-2);">
+          ${res.parentId ? `<button type="button" class="btn ghost sm" onclick="openFolderPicker(${id(res.parentId)})">‹ Up</button>` : ''}
+          <strong style="font-size:13px; flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">📁 ${escapeHtml(res.folder.name)}</strong>
+          <button type="button" class="btn rust sm" onclick="chooseDataFolder(${id(res.folder.id)}, this)">Save here</button>
+        </div>
+        <div style="max-height:220px; overflow:auto;">
+          ${res.folders.length
+            ? res.folders.map(f=>`<button type="button" class="folder-row" style="${rowStyle}" onclick="openFolderPicker(${id(f.id)})">📁 ${escapeHtml(f.name)} <span style="float:right; color:var(--ink-soft);">›</span></button>`).join('')
+            : '<p class="hint" style="margin:0; padding:10px 12px;">No folders inside. Tap <b>Save here</b> to use this one.</p>'}
+        </div>
+      </div>
+      <details style="margin-top:8px; font-size:12.5px; color:var(--ink-soft);">
+        <summary style="cursor:pointer;">Folder in a shared drive? Paste its link</summary>
+        <input type="text" id="folder-link" class="mono" style="width:100%; margin-top:8px; font-size:12px;" placeholder="https://drive.google.com/drive/folders/…">
+        <button type="button" class="btn ghost sm" style="margin-top:6px;" onclick="chooseDataFolder(document.getElementById('folder-link').value, this)">Move data here</button>
+      </details>
+      <p class="hint" id="folder-picker-error" style="margin:6px 0 0; color:var(--danger);"></p>`;
+  }).catch(e=>{ el.innerHTML = `<p class="hint" style="margin:10px 0 0; color:var(--danger);">${escapeHtml((e && e.message) || 'Could not list folders.')}</p>`; });
+}
+function chooseDataFolder(folderIdOrLink, btn){
+  if(!String(folderIdOrLink||'').trim()) return;
+  const label = btn && btn.textContent;
+  if(btn){ btn.disabled = true; btn.textContent = 'Moving…'; }
+  gasCall('rbSetFolder', folderIdOrLink).then(f=>{
+    toast('Herd data now saved in ' + f.name);
+    openWorkspaceDriveModal();
+  }).catch(e=>{
+    if(btn){ btn.disabled = false; btn.textContent = label; }
+    const err = document.getElementById('folder-picker-error');
+    if(err) err.textContent = (e && e.message) || 'Could not move the data file.';
   });
 }
 function parseDriveInput(text, manualSecret){
