@@ -172,6 +172,8 @@
     display:flex; align-items:center; gap:7px;
     background:none; border-top:none; border-left:none; border-right:none;
   }
+  .tab.tab-icon{ padding-left:14px; padding-right:14px; }
+  .tab.tab-icon svg{ display:block; }
   .tab .count{
     font-family:'JetBrains Mono', monospace;
     font-size:11px; background:var(--surface-2);
@@ -421,7 +423,10 @@
   .pasture-card{
     background:var(--surface); border:1px solid var(--line-soft); border-radius:var(--radius);
     padding:16px 18px; box-shadow:var(--shadow);
+    display:flex; flex-direction:column;
   }
+  /* The View animals button always sits in the bottom-left corner of the card. */
+  .pasture-card .pasture-actions{ margin-top:auto; padding-top:14px; display:flex; justify-content:flex-start; }
   .pasture-photo{
     width:calc(100% + 36px); margin:-16px -18px 12px; display:block;
     height:130px; object-fit:cover; border-radius:var(--radius) var(--radius) 0 0;
@@ -435,6 +440,24 @@
   .global-search-wrap{
     position:relative; flex:1; min-width:200px; max-width:380px;
   }
+  .settings-head{ display:flex; align-items:flex-end; justify-content:space-between; gap:12px; margin-bottom:16px; max-width:760px; }
+  .settings-list{ max-width:760px; }
+  .settings-sec{ background:var(--surface); border:1px solid var(--line-soft); border-radius:var(--radius); box-shadow:var(--shadow); margin-bottom:10px; }
+  .settings-sec > summary{ list-style:none; display:flex; align-items:center; gap:12px; padding:14px 18px; cursor:pointer; user-select:none; }
+  .settings-sec > summary::-webkit-details-marker{ display:none; }
+  .settings-sec > summary:hover{ background:var(--surface-2); border-radius:var(--radius); }
+  .settings-sec .ss-icon{ font-size:18px; width:26px; text-align:center; flex-shrink:0; }
+  .settings-sec .ss-text{ flex:1; min-width:0; display:flex; flex-direction:column; }
+  .settings-sec .ss-title{ font-family:'Roboto Slab', serif; font-weight:700; font-size:15px; color:var(--ink); }
+  .settings-sec .ss-sub{ font-size:12px; color:var(--ink-soft); margin-top:2px; }
+  .settings-sec .ss-count{ font-family:'JetBrains Mono', monospace; font-size:11px; background:var(--surface-2); color:var(--ink-soft); padding:2px 8px; border-radius:10px; white-space:nowrap; }
+  .settings-sec .ss-chev{ font-size:20px; color:var(--ink-soft); transition:transform .15s ease; line-height:1; }
+  .settings-sec[open] .ss-chev{ transform:rotate(90deg); }
+  .settings-sec[open] > summary{ border-bottom:1px dashed var(--line); border-radius:var(--radius) var(--radius) 0 0; }
+  .settings-sec .ss-body{ padding:16px 18px 18px; }
+  .icon-btn.active{ box-shadow:0 0 0 2px var(--brass-light, #E2B65C); }
+  .global-search-icon{ position:absolute; left:12px; top:50%; transform:translateY(-50%); color:var(--leather, #4A2C17); opacity:.7; pointer-events:none; z-index:1; }
+  .global-search-wrap #global-search-input{ padding-left:36px; }
   .global-search-results{
     position:absolute; top:calc(100% + 6px); left:0; right:0;
     background:var(--surface); border:1px solid var(--line); border-radius:var(--radius);
@@ -648,10 +671,10 @@
       </div>
       <div>
         <h1>Rangebook</h1>
-        <p>★ Cow / Calf Herd Ledger ★</p>
       </div>
     </div>
     <div class="global-search-wrap" id="global-search-wrap">
+      <svg class="global-search-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7"></circle><path d="M20 20l-3.5-3.5"></path></svg>
       <input type="text" id="global-search-input" class="search-input" style="width:100%;" placeholder="Search animals by name, RFID, breed, or class…" autocomplete="off" oninput="handleGlobalSearchInput(this.value)" onfocus="handleGlobalSearchInput(this.value)">
       <div id="global-search-results" class="global-search-results" style="display:none;"></div>
     </div>
@@ -673,7 +696,7 @@
         <span class="drive-dot" id="drive-dot"></span>
         <span class="sync-check" id="sync-check" aria-hidden="true">✓</span>
       </button>
-      <button class="icon-btn" onclick="openSettingsModal()" title="Settings" aria-label="Settings">
+      <button class="icon-btn" id="settings-btn" onclick="openSettingsModal()" title="Settings" aria-label="Settings">
         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
           <circle cx="12" cy="12" r="3"></circle>
           <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
@@ -1341,7 +1364,7 @@ function unassignedAnimals(){
    TABS
 ========================================================= */
 var TABS = [
-  { id:'dashboard', label:'Dashboard' },
+  { id:'dashboard', label:'Home', icon:'<svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 11l9-7 9 7"></path><path d="M5 10v10h5v-6h4v6h5V10"></path></svg>' },
   { id:'animals', label:'Animals' },
   { id:'pairs', label:'Pairs' },
   { id:'pastures', label:'Pastures' },
@@ -1357,6 +1380,7 @@ function renderTabs(){
     if(t.id==='pastures') count = state.pastures.length;
     if(t.id==='health') count = state.events.length;
     if(t.id==='breeding') count = state.breeding.length;
+    if(t.icon) return `<button class="tab tab-icon ${currentTab===t.id?'active':''}" onclick="setTab('${t.id}')" title="${t.label}" aria-label="${t.label}">${t.icon}</button>`;
     return `<button class="tab ${currentTab===t.id?'active':''}" onclick="setTab('${t.id}')">
       ${t.label} ${count!==''? `<span class="count">${count}</span>`:''}
     </button>`;
@@ -1389,6 +1413,14 @@ function render(){
   else if(currentTab==='health') root.innerHTML = viewHealth();
   else if(currentTab==='breeding') root.innerHTML = viewBreeding();
   else if(currentTab==='summary') root.innerHTML = viewSummary();
+  else if(currentTab==='settings'){
+    // Keep anything typed into the settings boxes if a sync re-draws the page.
+    const typed = [...root.querySelectorAll('input[id]')].filter(i=> i.type==='text' && i.value).map(i=>[i.id, i.value]);
+    root.innerHTML = viewSettings();
+    typed.forEach(([id, v])=>{ const el = document.getElementById(id); if(el) el.value = v; });
+  }
+  const gear = document.getElementById('settings-btn');
+  if(gear) gear.classList.toggle('active', currentTab==='settings');
   if(focusInfo){
     const el = document.getElementById(focusInfo.id);
     if(el){
@@ -1596,7 +1628,7 @@ function viewSummary(){
   const sel = (id, opts, cur, onchange)=> `<select id="${id}" onchange="${onchange}">${opts.map(([v,l])=>`<option value="${escapeHtml(v)}" ${v===cur?'selected':''}>${escapeHtml(l)}</option>`).join('')}</select>`;
   return `
     <div class="toolbar" style="margin-bottom:6px;">
-      <button class="btn ghost sm" onclick="setTab('dashboard')">← Dashboard</button>
+      <button class="btn ghost sm" onclick="setTab('dashboard')">← Home</button>
       <div class="section-title" style="margin:0 0 0 6px;">Herd summary</div>
     </div>
     <p class="section-desc">Active head (including Active – Preg). Ages come from the year letter. Click a bar or a row to see those animals.</p>
@@ -1702,7 +1734,7 @@ function viewDashboard(){
     </div>
 
     <div class="panel" id="upcoming-panel">
-      <h2>Upcoming &amp; overdue <button class="btn ghost sm" onclick="setTab('health')">Log an event</button></h2>
+      <h2>Upcoming &amp; Overdue <button class="btn ghost sm" onclick="setTab('health')">Log an event</button></h2>
       <p class="sub">Scheduled events, follow-ups, weaning windows and expected calvings. Click one to see the animals.</p>
       ${tasks.length===0 ? `<div class="empty-state"><div class="icon">📋</div><h3>Nothing on the books</h3><p>Add breeding, health, or calf records to see reminders here.</p></div>` :
       `<div class="task-list">
@@ -1906,7 +1938,7 @@ function viewPastures(){
             ${animals.length>14 ? `<span class="status-tag" style="cursor:pointer;" onclick="viewAnimalsInPasture(pastureGroupNamesCache[${idx}])">+${animals.length-14} more</span>` : ''}
             ${animals.length===0 ? `<span class="muted" style="font-size:12.5px;">No animals currently assigned</span>` : ''}
           </div>
-          <div class="modal-actions" style="justify-content:flex-start; padding:0; margin-top:14px;">
+          <div class="pasture-actions">
             <button class="btn rust sm" ${animals.length===0?'disabled':''} onclick="viewAnimalsInPasture(pastureGroupNamesCache[${idx}])">View animals (${animals.length})</button>
           </div>
         </div>`;
@@ -1922,7 +1954,7 @@ function viewPastures(){
           ${unassigned.slice(0,14).map(a=>`<span style="cursor:pointer;" onclick="openDrawer('${a.id}')">${eartag(a)}</span>`).join('')}
           ${unassigned.length>14 ? `<span class="status-tag" style="cursor:pointer;" onclick="viewAnimalsInPasture('__none__')">+${unassigned.length-14} more</span>` : ''}
         </div>
-        <div class="modal-actions" style="justify-content:flex-start; padding:0; margin-top:14px;">
+        <div class="pasture-actions">
           <button class="btn rust sm" onclick="viewAnimalsInPasture('__none__')">View animals (${unassigned.length})</button>
         </div>
       </div>` : ''}
@@ -3060,64 +3092,92 @@ async function testDriveConnection(){
   openDriveModal();
 }
 
-/* ---------- Settings modal ---------- */
+/* ---------- Settings page ----------
+   A full page (opened from the gear button) with collapsible sections, all closed by default. */
+var settingsOpen = new Set();
+var SETTINGS_SECTION_IDS = { 'pasture-library-section':'pastures' };
 function openSettingsModal(scrollTo){
-  setTimeout(()=>{ const el = scrollTo && document.getElementById(scrollTo); if(el) el.scrollIntoView({ block:'start' }); }, 0);
-  const body = `
-    <div class="field">
-      <label>Herd data</label>
-      <button type="button" class="btn rust" style="width:100%; justify-content:center;" onclick="closeModal(); openAnimalModal();">+ Add animal</button>
-    </div>
-    <div class="field" style="margin-top:22px; padding-top:18px; border-top:1px solid var(--line-soft);">
-      <label>Breed library</label>
-      <p class="hint" style="margin:0 0 10px;">Breeds you add here show up in the Breed dropdown when adding or editing an animal.</p>
-      <div style="display:flex; gap:8px; margin-bottom:12px; align-items:center;">
-        <input type="color" id="new-breed-color" value="${BREED_PALETTE[state.breeds.length % BREED_PALETTE.length]}" title="Breed color" style="width:36px; height:36px; padding:0; border:none; border-radius:6px; cursor:pointer; flex-shrink:0;">
-        <input type="text" id="new-breed-input" placeholder="e.g. Angus" style="flex:1;" onkeydown="if(event.key==='Enter'){event.preventDefault(); addBreedFromSettings();}">
-        <button type="button" class="btn ghost sm" onclick="addBreedFromSettings()">Add</button>
+  closeModal();
+  closeDrawer();
+  const key = scrollTo && (SETTINGS_SECTION_IDS[scrollTo] || scrollTo);
+  if(key) settingsOpen.add(key);
+  setTab('settings');
+  setTimeout(()=>{
+    const el = key && document.getElementById('settings-' + key);
+    if(el) el.scrollIntoView({ block:'start', behavior:'smooth' });
+    else window.scrollTo({ top:0 });
+  }, 0);
+}
+function settingsToggle(key, open){ if(open) settingsOpen.add(key); else settingsOpen.delete(key); }
+function settingsSection(key, icon, title, sub, count, body){
+  return `<details class="settings-sec" id="settings-${key}" ${settingsOpen.has(key)?'open':''} ontoggle="settingsToggle('${key}', this.open)">
+    <summary>
+      <span class="ss-icon" aria-hidden="true">${icon}</span>
+      <span class="ss-text"><span class="ss-title">${title}</span><span class="ss-sub">${sub}</span></span>
+      ${count!==null && count!==undefined ? `<span class="ss-count">${count}</span>` : ''}
+      <span class="ss-chev" aria-hidden="true">›</span>
+    </summary>
+    <div class="ss-body">${body}</div>
+  </details>`;
+}
+function viewSettings(){
+  const n = (k, one, many)=> `${k} ${k===1 ? one : many}`;
+  return `
+    <div class="settings-head">
+      <div>
+        <div class="section-title">Settings</div>
+        <p class="section-desc" style="margin-bottom:0;">Tap a section to open it.</p>
       </div>
-      <div id="breed-chip-list">${renderBreedChips()}</div>
+      <button type="button" class="btn ghost sm" onclick="goHome()">← Home</button>
     </div>
-    <div class="field" style="margin-top:22px; padding-top:18px; border-top:1px solid var(--line-soft);">
-      <label>Vaccine library</label>
-      <p class="hint" style="margin:0 0 10px;">Vaccines you add here show up in the Vaccine dropdown when logging a Vaccination event.</p>
-      <div style="display:flex; gap:8px; margin-bottom:12px;">
-        <input type="text" id="new-vaccine-input" placeholder="e.g. Bovi-Shield Gold" style="flex:1;" onkeydown="if(event.key==='Enter'){event.preventDefault(); addVaccineFromSettings();}">
-        <button type="button" class="btn ghost sm" onclick="addVaccineFromSettings()">Add</button>
-      </div>
-      <div id="vaccine-chip-list">${renderVaccineChips()}</div>
-    </div>
-    <div class="field" style="margin-top:22px; padding-top:18px; border-top:1px solid var(--line-soft);">
-      <label>Tag color library</label>
-      <p class="hint" style="margin:0 0 10px;">Pick the ear-tag colour for each year letter. Animals with that year letter show their tag in this colour everywhere in the app.</p>
-      <div style="display:flex; gap:8px; margin-bottom:12px; align-items:center;">
-        <input type="color" id="new-tagcolor-color" value="#B23A2E" title="Tag colour" style="width:36px; height:36px; padding:0; border:none; border-radius:6px; cursor:pointer; flex-shrink:0;">
-        <input type="text" id="new-tagcolor-letter" maxlength="2" placeholder="Year letter, e.g. N" style="flex:1; text-transform:uppercase;" onkeydown="if(event.key==='Enter'){event.preventDefault(); addTagColorFromSettings();}">
-        <button type="button" class="btn ghost sm" onclick="addTagColorFromSettings()">Add</button>
-      </div>
-      <div id="tagcolor-chip-list">${renderTagColorChips()}</div>
-    </div>
-    <div class="field" id="pasture-library-section" style="margin-top:22px; padding-top:18px; border-top:1px solid var(--line-soft);">
-      <label>Pasture library</label>
-      <p class="hint" style="margin:0 0 10px;">Add pastures and edit their name, acres, notes and photo. Edit is also where you move a pasture's group or delete it.</p>
-      <button type="button" class="btn ghost sm" style="margin-bottom:12px;" onclick="openPastureModal(null, true)">+ Add pasture</button>
-      <div id="pasture-library-list">${renderPastureLibrary()}</div>
-    </div>
-    <div class="field" style="margin-top:22px; padding-top:18px; border-top:1px solid var(--line-soft);">
-      <label style="color:var(--danger);">Danger zone</label>
-      <p class="hint" style="margin:0 0 12px;">Permanently deletes every animal, pasture, health record, and breeding record stored in this app. This can't be undone.</p>
-      <button type="button" id="reset-hold-btn" class="hold-reset-btn"
-        onmousedown="startResetHold()" onmouseup="cancelResetHold()" onmouseleave="cancelResetHold()"
-        ontouchstart="startResetHold(event)" ontouchend="cancelResetHold()" ontouchcancel="cancelResetHold()">
-        <div id="reset-hold-fill" class="hold-reset-fill"></div>
-        <span class="hold-reset-label" id="reset-hold-label">Press and hold 10s to reset all data</span>
-      </button>
-    </div>
-    <div class="modal-actions">
-      <button type="button" class="btn ghost" onclick="closeModal()">Close</button>
+    <div class="settings-list">
+      ${settingsSection('herd', '🐄', 'Herd data', 'Add one animal, or import a spreadsheet of many', null, `
+        <div style="display:flex; gap:8px; flex-wrap:wrap;">
+          <button type="button" class="btn rust" onclick="openAnimalModal();">+ Add animal</button>
+          <button type="button" class="btn ghost" onclick="openImportModal();">Import .xlsx / .csv</button>
+        </div>`)}
+      ${settingsSection('breeds', '🐂', 'Breed library', 'Breeds offered when adding or editing an animal', n((state.breeds||[]).length, 'breed', 'breeds'), `
+        <p class="hint" style="margin:0 0 10px;">Breeds you add here show up in the Breed dropdown when adding or editing an animal.</p>
+        <div style="display:flex; gap:8px; margin-bottom:12px; align-items:center;">
+          <input type="color" id="new-breed-color" value="${BREED_PALETTE[state.breeds.length % BREED_PALETTE.length]}" title="Breed color" style="width:36px; height:36px; padding:0; border:none; border-radius:6px; cursor:pointer; flex-shrink:0;">
+          <input type="text" id="new-breed-input" placeholder="e.g. Angus" style="flex:1; min-width:0;" onkeydown="if(event.key==='Enter'){event.preventDefault(); addBreedFromSettings();}">
+          <button type="button" class="btn ghost sm" onclick="addBreedFromSettings()">Add</button>
+        </div>
+        <div id="breed-chip-list">${renderBreedChips()}</div>`)}
+      ${settingsSection('vaccines', '💉', 'Vaccine library', 'Vaccines offered when logging a vaccination', n((state.vaccines||[]).length, 'vaccine', 'vaccines'), `
+        <p class="hint" style="margin:0 0 10px;">Vaccines you add here show up in the Vaccine dropdown when logging a Vaccination event.</p>
+        <div style="display:flex; gap:8px; margin-bottom:12px;">
+          <input type="text" id="new-vaccine-input" placeholder="e.g. Bovi-Shield Gold" style="flex:1; min-width:0;" onkeydown="if(event.key==='Enter'){event.preventDefault(); addVaccineFromSettings();}">
+          <button type="button" class="btn ghost sm" onclick="addVaccineFromSettings()">Add</button>
+        </div>
+        <div id="vaccine-chip-list">${renderVaccineChips()}</div>`)}
+      ${settingsSection('tagcolors', '🏷️', 'Tag color library', 'Ear-tag colour for each year letter', n((state.tagColors||[]).length, 'colour', 'colours'), `
+        <p class="hint" style="margin:0 0 10px;">Pick the ear-tag colour for each year letter. Animals with that year letter show their tag in this colour everywhere in the app.</p>
+        <div style="display:flex; gap:8px; margin-bottom:12px; align-items:center;">
+          <input type="color" id="new-tagcolor-color" value="#B23A2E" title="Tag colour" style="width:36px; height:36px; padding:0; border:none; border-radius:6px; cursor:pointer; flex-shrink:0;">
+          <input type="text" id="new-tagcolor-letter" maxlength="2" placeholder="Year letter, e.g. N" style="flex:1; min-width:0; text-transform:uppercase;" onkeydown="if(event.key==='Enter'){event.preventDefault(); addTagColorFromSettings();}">
+          <button type="button" class="btn ghost sm" onclick="addTagColorFromSettings()">Add</button>
+        </div>
+        <div id="tagcolor-chip-list">${renderTagColorChips()}</div>`)}
+      ${settingsSection('pastures', '🌾', 'Pasture library', 'Add, edit, move groups or delete pastures', n((state.pastures||[]).length, 'pasture', 'pastures'), `
+        <div id="pasture-library-section">
+          <p class="hint" style="margin:0 0 10px;">Add pastures and edit their name, acres, notes and photo. Edit is also where you move a pasture's group or delete it.</p>
+          <button type="button" class="btn ghost sm" style="margin-bottom:12px;" onclick="openPastureModal(null, true)">+ Add pasture</button>
+          <div id="pasture-library-list">${renderPastureLibrary()}</div>
+        </div>`)}
+      ${settingsSection('sync', '☁️', 'Google Drive sync & backups', 'Where the data is saved, backups, export and import', null, `
+        <p class="hint" style="margin:0 0 10px;">See the sync status, choose the Drive folder, back up now, or export and import a backup file.</p>
+        <button type="button" class="btn ghost" onclick="openDriveModal()">Open Google Drive sync</button>`)}
+      ${settingsSection('danger', '⚠️', '<span style="color:var(--danger);">Danger zone</span>', 'Reset all data', null, `
+        <p class="hint" style="margin:0 0 12px;">Permanently deletes every animal, pasture, health record, and breeding record stored in this app. This can't be undone.</p>
+        <button type="button" id="reset-hold-btn" class="hold-reset-btn"
+          onmousedown="startResetHold()" onmouseup="cancelResetHold()" onmouseleave="cancelResetHold()"
+          ontouchstart="startResetHold(event)" ontouchend="cancelResetHold()" ontouchcancel="cancelResetHold()">
+          <div id="reset-hold-fill" class="hold-reset-fill"></div>
+          <span class="hold-reset-label" id="reset-hold-label">Press and hold 10s to reset all data</span>
+        </button>`)}
     </div>
   `;
-  document.getElementById('modal-root').innerHTML = modalShell('Settings', body);
 }
 
 var resetHoldStart = null;
