@@ -1549,6 +1549,14 @@ function getUpcomingTasks(){
   const detail = ev=> ev.vaccine ? ' · ' + ev.vaccine : (ev.pregResult ? ' · ' + ev.pregResult : '');
 
   state.events.forEach(ev=>{
+    // General events (no animals): show from today onwards.
+    if(ev.general){
+      if(ev.date && ev.date >= today){
+        add(`gen|${ev.id}`, ev.title || 'Event', 'General event', ev.date, null, ev.notes);
+        groups.get(`gen|${ev.id}`).eventId = ev.id;
+      }
+      return;
+    }
     const a = animalById(ev.animalId);
     if(!a || !isActive(a)) return;
     // Scheduled: logged with a date that hasn't arrived yet.
@@ -1580,6 +1588,7 @@ function getUpcomingTasks(){
 function openUpcomingGroup(idx){
   const g = upcomingCache[idx];
   if(!g) return;
+  if(g.eventId){ openGeneralEvent(g.eventId); return; }
   const animals = g.animalIds.map(animalById).filter(Boolean).sort(byName);
   const body = `
     <p class="hint" style="margin:0 0 ${g.notes && g.notes.length ? 8 : 14}px; font-size:12.5px;">${escapeHtml(g.kind)} · ${fmtDate(g.date)} · ${animals.length} animal${animals.length===1?'':'s'}</p>
@@ -1844,7 +1853,7 @@ function viewDashboard(){
           return `<div class="task-item" style="cursor:pointer;" onclick="openUpcomingGroup(${idx})">
             <div class="task-dot ${urg}"></div>
             <div class="task-body">
-              <div class="task-title">${escapeHtml(t.label)} <span class="muted" style="font-weight:500;">— ${n} animal${n===1?'':'s'}</span></div>
+              <div class="task-title">${escapeHtml(t.label)} ${t.eventId ? '' : `<span class="muted" style="font-weight:500;">— ${n} animal${n===1?'':'s'}</span>`}</div>
               <div class="task-sub">${escapeHtml(t.kind)} · ${fmtDate(t.date)}</div>
               ${t.notes && t.notes.length ? `<div class="task-note">${escapeHtml(t.notes.join(' · '))}</div>` : ''}
             </div>
@@ -1862,6 +1871,14 @@ function viewDashboard(){
         ${recentGroups.map((g, idx)=>{
           const ev = g.first;
           const a = animalById(ev.animalId);
+          if(ev.general) return `<div class="task-item" style="cursor:pointer;" onclick="openGeneralEvent('${ev.id}')">
+            <div class="task-dot ok"></div>
+            <div class="task-body">
+              <div class="task-title">${escapeHtml(ev.title || 'Event')} — General event</div>
+              <div class="task-sub">${escapeHtml(ev.notes||'')}</div>
+            </div>
+            <div class="task-when ok">${fmtDate(ev.date)}</div>
+          </div>`;
           const attrs = g.isGroup ? `style="cursor:pointer;" title="See the animals" onclick="openEventGroup(${idx})"`
             : (a ? `style="cursor:pointer;" title="Open ${escapeHtml(displayName(a))}" onclick="openDrawer('${a.id}')"` : '');
           const who = g.isGroup ? `${g.events.length} head · ${escapeHtml(eventGroupLabel(g))}` : escapeHtml(displayName(a));
@@ -2447,6 +2464,7 @@ function recentMovesHtml(){
 /* Events logged for a group together show as one row. New group events share a groupId;
    older records without one are grouped when type, date, details and notes all match. */
 function eventGroupKey(ev){
+  if(ev.general) return 'x:' + ev.id;
   if(ev.groupId) return 'g:' + ev.groupId;
   if(ev.individual) return 'i:' + ev.id;
   return 'l:' + [ev.type, ev.date, ev.vaccine||'', ev.pregResult||'', ev.notes||'', ev.nextDue||''].join('|');
@@ -2468,6 +2486,30 @@ function eventGroupLabel(g){
   const names = [...new Set(g.events.map(ev=> ((animalById(ev.animalId)||{}).pasture||'').trim()))];
   if(names.length===1) return names[0] || 'No pasture';
   return `${names.length} pastures`;
+}
+function openGeneralEvent(id){
+  const ev = state.events.find(e=>e.id===id);
+  if(!ev) return;
+  const days = daysBetween(todayStr(), ev.date);
+  const when = days>0 ? `in ${days} day${days===1?'':'s'}` : days===0 ? 'today' : `${-days} day${days===-1?'':'s'} ago`;
+  const body = `
+    <p class="hint" style="margin:0 0 10px; font-size:12.5px;">General event · ${fmtDate(ev.date)} · ${when}</p>
+    ${ev.notes ? `<p style="margin:0 0 14px; font-size:13px; background:var(--surface-2); padding:8px 10px; border-radius:var(--radius); white-space:pre-wrap;">${escapeHtml(ev.notes)}</p>` : ''}
+    <p class="hint" style="margin:0;">Not tied to any animal.</p>
+    <div class="modal-actions">
+      <button type="button" class="btn danger" style="margin-right:auto;" onclick="deleteGeneralEvent('${ev.id}')">Delete</button>
+      <button type="button" class="btn rust" onclick="closeModal()">Done</button>
+    </div>`;
+  document.getElementById('modal-root').innerHTML = modalShell(escapeHtml(ev.title || 'Event'), body);
+}
+function deleteGeneralEvent(id){
+  const ev = state.events.find(e=>e.id===id);
+  if(!ev || !confirm(`Delete "${ev.title || 'this event'}"?`)) return;
+  state.events = state.events.filter(e=>e.id!==id);
+  saveState();
+  closeModal();
+  render();
+  toast('Event deleted');
 }
 function eventDetail(ev){ return ev.vaccine || ev.pregResult || ''; }
 var eventGroupCache = [];
@@ -2523,7 +2565,14 @@ function viewHealth(){
           ${groups.map((g, idx)=>{
             const ev = g.first;
             const a = animalById(ev.animalId);
-            const click = g.isGroup ? `openEventGroup(${idx})` : (a ? `openDrawer('${a.id}')` : '');
+            const click = ev.general ? `openGeneralEvent('${ev.id}')` : g.isGroup ? `openEventGroup(${idx})` : (a ? `openDrawer('${a.id}')` : '');
+            if(ev.general) return `<tr onclick="${click}">
+              <td class="num-cell">${fmtDate(ev.date)}</td>
+              <td><span class="eartag group-event">General</span></td>
+              <td>${escapeHtml(ev.title || 'Event')}<div class="muted" style="font-size:11.5px;margin-top:2px;">General event</div></td>
+              <td class="muted">${escapeHtml(ev.notes||'—')}</td>
+              <td class="num-cell">—</td>
+            </tr>`;
             return `<tr onclick="${click}">
               <td class="num-cell">${fmtDate(ev.date)}</td>
               <td>${g.isGroup ? groupHeadHtml(g) : (a? eartag(a) : '<span class="muted">Unknown</span>')}</td>
@@ -4135,12 +4184,18 @@ function openEventModal(presetAnimalId){
         <div class="chip-toggle">
           <button type="button" class="chip active" id="event-mode-individual-btn" onclick="setEventMode('individual')">Individual animal</button>
           <button type="button" class="chip" id="event-mode-group-btn" onclick="setEventMode('group')">Group / pasture</button>
+          <button type="button" class="chip" id="event-mode-general-btn" onclick="setEventMode('general')">General (no animals)</button>
         </div>
       </div>` : ''}
       ${individualBlock}
       ${groupBlock}
+      <div class="field" id="general-event-block" style="display:none;">
+        <label>What *</label>
+        <input type="text" name="generalTitle" id="general-title-input" maxlength="120" placeholder="e.g. Bull sale at Lethbridge" autocomplete="off">
+        <p class="hint">For things not tied to an animal, like a sale, a vet visit or hauling. Future dates show up in Upcoming on the Home page.</p>
+      </div>
       <div class="field-row">
-        <div class="field"><label>Event type *</label>
+        <div class="field" id="event-type-field"><label>Event type *</label>
           <select name="type" id="event-type-select" onchange="toggleCalvingFields(); toggleVaccineField(); togglePregField(); enforceGroupCalvingRestriction();">${EVENT_TYPES.map(t=>`<option value="${t}">${t}</option>`).join('')}</select>
         </div>
         <div class="field"><label>Date *</label><input type="date" name="date" required value="${todayStr()}"></div>
@@ -4174,22 +4229,34 @@ function openEventModal(presetAnimalId){
       </div>
       <div class="field" id="weight-field-block"><label>Weight (lb, if applicable)</label><input type="number" name="weight" min="0" placeholder="e.g. 68"></div>
       <div class="field"><label>Notes</label><textarea name="notes" placeholder="Product used, dosage, observations…"></textarea></div>
-      <div class="field"><label>Next due date (optional)</label><input type="date" name="nextDue"></div>
+      <div class="field" id="next-due-field"><label>Next due date (optional)</label><input type="date" name="nextDue"></div>
       <div class="modal-actions">
         <button type="button" class="btn ghost" onclick="closeModal()">Cancel</button>
         <button type="submit" class="btn rust">Save event</button>
       </div>
     </form>
   `;
-  document.getElementById('modal-root').innerHTML = modalShell('Log health event', body);
+  document.getElementById('modal-root').innerHTML = modalShell('Log event', body);
   // Show the fields for the type that's selected when the form opens (Vaccination by default).
   toggleCalvingFields(); toggleVaccineField(); togglePregField();
 }
 function setEventMode(mode){
   const indivBtn = document.getElementById('event-mode-individual-btn');
   const groupBtn = document.getElementById('event-mode-group-btn');
+  const generalBtn = document.getElementById('event-mode-general-btn');
   if(indivBtn) indivBtn.classList.toggle('active', mode==='individual');
   if(groupBtn) groupBtn.classList.toggle('active', mode==='group');
+  if(generalBtn) generalBtn.classList.toggle('active', mode==='general');
+  // General events have no animals, so only What / Date / Notes apply.
+  const general = mode==='general';
+  const show = (id, on)=>{ const el = document.getElementById(id); if(el) el.style.display = on ? '' : 'none'; };
+  show('general-event-block', general);
+  show('event-type-field', !general);
+  show('next-due-field', !general);
+  const titleInput = document.getElementById('general-title-input');
+  if(titleInput) titleInput.required = general;
+  if(general){ ['vaccine-field','preg-field','calving-fields'].forEach(id=>show(id, false)); }
+  else { toggleCalvingFields(); toggleVaccineField(); togglePregField(); }
   const indivBlock = document.getElementById('individual-animal-block');
   const groupBlock = document.getElementById('group-animal-block');
   if(indivBlock) indivBlock.style.display = mode==='individual' ? 'block' : 'none';
@@ -4245,6 +4312,17 @@ function saveEvent(evt){
   const modeInput = document.getElementById('event-mode-input');
   const mode = modeInput ? modeInput.value : 'individual';
   const type = f.type.value;
+
+  if(mode==='general'){
+    const title = f.generalTitle.value.trim();
+    if(!title){ toast('Say what the event is'); return; }
+    state.events.push({ id: uid(), animalId: null, general: true, type: 'General', title, date: f.date.value, notes: f.notes.value.trim(), nextDue: null });
+    saveState();
+    closeModal();
+    render();
+    toast(f.date.value > todayStr() ? `Added "${title}" to Upcoming` : `Logged "${title}"`);
+    return;
+  }
 
   if(mode==='group'){
     if(type==='Calving'){ toast('Calving must be logged for one animal at a time'); return; }
