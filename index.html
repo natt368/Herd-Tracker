@@ -451,6 +451,8 @@
   .pasture-card .pasture-tags{ max-height:var(--pasture-tags-h, 92px); overflow:hidden; align-content:flex-start; margin-top:8px; }
   /* The View animals button always sits in the bottom-left corner of the card. */
   .pasture-card .pasture-actions{ margin-top:auto; padding-top:14px; display:flex; justify-content:flex-start; }
+  /* Animal photos are never cropped: the whole picture is shown, scaled to the width. */
+  .animal-photo{ display:block; width:100%; height:auto; max-height:420px; object-fit:contain; background:var(--surface-2); border-radius:4px; border:1px solid var(--line-soft); }
   .pasture-photo{
     width:calc(100% + 36px); margin:-16px -18px 12px; display:block;
     height:130px; object-fit:cover; border-radius:var(--radius) var(--radius) 0 0;
@@ -1926,7 +1928,7 @@ function viewAnimals(){
             const w = latestWeight(a);
             return `<tr onclick="openDrawer('${a.id}')">
               <td onclick="event.stopPropagation()"><input type="checkbox" ${selectedAnimalIds.has(a.id)?'checked':''} onchange="toggleAnimalSelect('${a.id}', this.checked)"></td>
-              <td><div style="display:flex; align-items:center; gap:8px;">${a.photo? `<img src="${a.photo}" alt="" style="width:28px;height:28px;object-fit:cover;border-radius:50%;border:1px solid var(--line-soft);flex-shrink:0;">`:''}<div>${eartag(a)}${a.status==='active-preg' ? ` <span class="age-pill due">Preg</span>` : ''}${semenBadge(a)}</div></div></td>
+              <td><div style="display:flex; align-items:center; gap:8px;">${a.photo? `<img src="${a.photo}" alt="" style="width:28px;height:28px;object-fit:contain;background:var(--surface-2);border-radius:4px;border:1px solid var(--line-soft);flex-shrink:0;">`:''}<div>${eartag(a)}${a.status==='active-preg' ? ` <span class="age-pill due">Preg</span>` : ''}${semenBadge(a)}</div></div></td>
               <td class="num-cell">${a.yearLetter? escapeHtml(a.yearLetter) : '<span class="muted">—</span>'}</td>
               <td>${classLabel(a)}</td>
               <td>${breedBadge(a.breed)}</td>
@@ -3566,7 +3568,7 @@ function performReset(){
 var animalFormPhoto = null;
 function renderAnimalModalPhotoBlock(){
   if(animalFormPhoto){
-    return `<img src="${animalFormPhoto}" alt="Animal photo" style="width:100%;max-height:180px;object-fit:cover;border-radius:4px;margin-bottom:8px;border:1px solid var(--line-soft);">
+    return `<img src="${animalFormPhoto}" alt="Animal photo" class="animal-photo" style="margin-bottom:8px;">
       <button type="button" class="btn ghost sm" onclick="removeAnimalFormPhoto()">Remove photo</button>`;
   }
   return `<p class="hint" style="margin:0 0 8px;">No photo yet.</p>`;
@@ -4555,7 +4557,7 @@ function openDrawer(id){
       <div class="drawer-head">
         <button class="modal-close" onclick="closeDrawer()">✕</button>
       </div>
-      ${a.photo ? `<img src="${a.photo}" alt="${escapeHtml(displayName(a))}" style="width:100%;max-height:220px;object-fit:cover;border-radius:4px;margin-bottom:14px;border:1px solid var(--line-soft);">` : ''}
+      ${a.photo ? `<img src="${a.photo}" alt="${escapeHtml(displayName(a))}" class="animal-photo" style="margin-bottom:14px;">` : ''}
       <div class="drawer-title">${escapeHtml(displayName(a))}</div>
       <div class="drawer-sub">${classLabel(a)} · ${a.breed? breedBadge(a.breed) : 'Breed unrecorded'} · ${statusLabel(a.status)}</div>
 
