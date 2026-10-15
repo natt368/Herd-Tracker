@@ -1649,7 +1649,28 @@ function yearFromLetter(letter){
   while(y + YEAR_LETTERS.length <= now) y += YEAR_LETTERS.length;
   return y;
 }
+// The year letter for a birth year / date (inverse of yearFromLetter).
+function letterForYear(y){
+  y = Number(y);
+  if(!y) return '';
+  const n = YEAR_LETTERS.length;
+  return YEAR_LETTERS[(((y - 2013) % n) + n) % n];
+}
+function letterForDate(dob){ const m = /^(\d{4})-/.exec(String(dob||'')); return m ? letterForYear(m[1]) : ''; }
 function ageYears(a){ const y = yearFromLetter(a && a.yearLetter); return y===null ? null : new Date().getFullYear() - y; }
+// When the birthday moves to a different year, the year letter (which sets the age) follows it.
+function syncYearLetterFromDob(input){
+  const form = input.form;
+  const letter = letterForDate(input.value);
+  const note = document.getElementById('dob-letter-note');
+  if(!form || !letter) return;
+  const box = form.yearLetter;
+  const current = String(box.value||'').trim().toUpperCase();
+  if(current === letter) return;
+  box.value = letter;
+  box.dispatchEvent(new Event('input'));
+  if(note) note.textContent = current ? `Year letter changed from ${current} to ${letter} to match.` : `Year letter set to ${letter}.`;
+}
 function yearLetterHint(letter){
   const l = String(letter||'').trim().toUpperCase();
   if(!l) return 'Sets the age.';
@@ -3677,7 +3698,7 @@ function openAnimalModal(presetKlass, editId){
         </div>
       </div>
       <div class="field-row three">
-        <div class="field"><label>Date of birth</label><input type="date" name="dob" value="${a.dob||''}"></div>
+        <div class="field"><label>Date of birth</label><input type="date" name="dob" value="${a.dob||''}" onchange="syncYearLetterFromDob(this)"><p class="hint" id="dob-letter-note"></p></div>
         <div class="field"><label>Year letter <span id="year-letter-swatch" title="Tag colour for this year letter" style="display:inline-block; width:10px; height:10px; border-radius:50%; vertical-align:middle; margin-left:4px; border:1px solid rgba(0,0,0,0.2); background:${tagColorForLetter(a.yearLetter)||'transparent'};"></span></label><input type="text" name="yearLetter" maxlength="2" oninput="const sw=document.getElementById('year-letter-swatch'); if(sw) sw.style.background = tagColorForLetter(this.value)||'transparent'; const h=document.getElementById('year-letter-hint'); if(h) h.textContent = yearLetterHint(this.value);" value="${escapeHtml(a.yearLetter)}" placeholder="e.g. N" style="text-transform:uppercase;"><p class="hint" id="year-letter-hint">${escapeHtml(yearLetterHint(a.yearLetter))}</p></div>
         <div class="field"><label>Status</label>
           <select name="status" id="animal-status-select" onchange="toggleSalePriceField()">
@@ -3776,7 +3797,7 @@ function saveAnimal(evt, id, editing){
     klass: f.klass.value,
     breed: f.breed.value.trim(),
     dob: f.dob.value,
-    yearLetter: f.yearLetter.value.trim().toUpperCase(),
+    yearLetter: f.yearLetter.value.trim().toUpperCase() || letterForDate(f.dob.value),
     status: f.status.value,
     damId: f.damId.value.trim(),
     sireId: sireRefFromInput(f.sireId.value),
@@ -4001,7 +4022,7 @@ function processImportRows(rows){
       klass: normalizeClass(rec.klass),
       breed: String(rec.breed||'').trim(),
       dob: parseDateFlexible(rec.dob),
-      yearLetter: String(rec.yearLetter||'').trim().toUpperCase(),
+      yearLetter: String(rec.yearLetter||'').trim().toUpperCase() || letterForDate(parseDateFlexible(rec.dob)),
       damId: String(rec.damId||'').trim(),
       sireId: String(rec.sireId||'').trim(),
       scrotalCm: rec.scrotalCm!==undefined && !isNaN(parseFloat(rec.scrotalCm)) ? parseFloat(rec.scrotalCm) : '',
@@ -4101,6 +4122,8 @@ function confirmImport(){
     const a = animalByTag(r.tagId);
     if(!a) return;
     IMPORT_OVERWRITE_FIELDS.forEach(k=>{ if(r.provided.includes(k)) a[k] = r[k]; });
+    // A new birthday without a year letter column moves the year letter with it.
+    if(r.provided.includes('dob') && r.dob && !(r.provided.includes('yearLetter') && String(r.yearLetter||'').trim())) a.yearLetter = letterForDate(r.dob);
     const w = Number(r.weight);
     if(r.provided.includes('weight') && !isNaN(w) && w>0){
       const date = r.dob || todayStr();
@@ -4416,7 +4439,7 @@ function saveEvent(evt){
       if(cow.status==='active-preg') cow.status = 'active';
       state.animals.push({
         id: uid(), tagId: calfTagId, name: f.calfName.value.trim(), klass: calfSex==='Bull' ? 'Bull Calf' : 'Heifer Calf',
-        breed: cow.breed || '', dob: ev.date, yearLetter: '',
+        breed: cow.breed || '', dob: ev.date, yearLetter: letterForDate(ev.date),
         damId: cow.tagId, sireId: rec ? (rec.sireTagId||'') : '',
         status: 'active', pasture: cow.pasture || '', notes: '',
         weights: [], weanDate: null
