@@ -1671,6 +1671,46 @@ function syncYearLetterFromDob(input){
   box.dispatchEvent(new Event('input'));
   if(note) note.textContent = current ? `Year letter changed from ${current} to ${letter} to match.` : `Year letter set to ${letter}.`;
 }
+/* Animals whose birthday year disagrees with their year letter. The letter is trusted (it sets the age),
+   so the fix moves the birthday to Feb 1 of the letter's year. */
+function birthdayMismatches(){
+  return state.animals.filter(a=>{
+    const y = yearFromLetter(a.yearLetter);
+    const m = /^(\d{4})-/.exec(String(a.dob||''));
+    return y!==null && m && Number(m[1]) !== y;
+  });
+}
+function openBirthdayFix(){
+  const list = birthdayMismatches().sort(byName);
+  if(!list.length){ toast('Every birthday already matches its year letter'); return; }
+  const body = `
+    <p class="hint" style="margin:0 0 12px; font-size:12.5px;">The year letter decides the age, so each birthday below moves to <b>Feb 1</b> of its letter's year. You can undo this right after.</p>
+    <div style="border:1px solid var(--line-soft); border-radius:var(--radius); background:var(--white); max-height:380px; overflow-y:auto;">
+      ${list.map(a=>`<div class="mini-row" style="padding:8px 10px;">
+        <span>${eartag(a)} <span class="muted" style="font-size:11.5px;">letter ${escapeHtml(String(a.yearLetter).toUpperCase())}</span></span>
+        <span class="d" style="white-space:nowrap;">${fmtDate(a.dob)} → <b>${fmtDate(yearFromLetter(a.yearLetter) + '-02-01')}</b></span>
+      </div>`).join('')}
+    </div>
+    <div class="modal-actions">
+      <button type="button" class="btn ghost" onclick="closeModal()">Cancel</button>
+      <button type="button" class="btn rust" onclick="applyBirthdayFix()">Fix ${list.length} birthday${list.length===1?'':'s'}</button>
+    </div>`;
+  document.getElementById('modal-root').innerHTML = modalShell('Fix birthdays to match year letters', body);
+}
+function applyBirthdayFix(){
+  const list = birthdayMismatches();
+  const before = list.map(a=>({ id:a.id, dob:a.dob }));
+  list.forEach(a=>{ a.dob = yearFromLetter(a.yearLetter) + '-02-01'; });
+  saveState();
+  closeModal();
+  render();
+  toastAction(`Fixed ${list.length} birthday${list.length===1?'':'s'} to Feb 1 of the year letter`, 'Undo', ()=>{
+    before.forEach(b=>{ const a = animalById(b.id); if(a) a.dob = b.dob; });
+    saveState();
+    render();
+    toast('Birthdays put back');
+  }, 15000);
+}
 function yearLetterHint(letter){
   const l = String(letter||'').trim().toUpperCase();
   if(!l) return 'Sets the age.';
@@ -1950,6 +1990,10 @@ function viewAnimals(){
         <button class="chip ${animalFilters.status==='all'?'active':''}" onclick="animalFilters.status='all'; render();">All</button>
       </div>
     </div>
+    ${birthdayMismatches().length ? `<div class="bulk-bar" style="background:var(--tag-bg);">
+      <span>${birthdayMismatches().length} birthday${birthdayMismatches().length===1?' doesn\'t':'s don\'t'} match the year letter.</span>
+      <button class="btn ghost sm" onclick="openBirthdayFix()">Review &amp; fix</button>
+    </div>` : ''}
     ${animalFilters.pasture && animalFilters.pasture!=='all' ? `<div class="bulk-bar" style="background:var(--pasture-bg);">
       <span>Showing ${list.length} animal${list.length===1?'':'s'} in <b>${animalFilters.pasture==='__none__' ? 'no pasture (unassigned)' : escapeHtml(animalFilters.pasture)}</b></span>
       <button class="btn ghost sm" onclick="setTab('pastures')">← Back to pastures</button>
@@ -3530,10 +3574,17 @@ function viewSettings(){
       <button type="button" class="btn ghost sm" onclick="goHome()">← Home</button>
     </div>
     <div class="settings-list">
-      ${settingsSection('herd', '🐄', 'Herd data', 'Add one animal, or import a spreadsheet of many', null, `
+      ${settingsSection('herd', '🐄', 'Herd data', 'Add one animal, import a spreadsheet, or fix birthdays', birthdayMismatches().length ? `${birthdayMismatches().length} to fix` : null, `
         <div style="display:flex; gap:8px; flex-wrap:wrap;">
           <button type="button" class="btn rust" onclick="openAnimalModal();">+ Add animal</button>
           <button type="button" class="btn ghost" onclick="openImportModal();">Import .xlsx / .csv</button>
+        </div>
+        <div style="margin-top:16px; padding-top:14px; border-top:1px dashed var(--line);">
+          <label style="margin-bottom:4px;">Birthdays vs year letters</label>
+          ${birthdayMismatches().length
+            ? `<p class="hint" style="margin:0 0 8px;"><b>${birthdayMismatches().length}</b> animal${birthdayMismatches().length===1?' has a birthday':'s have birthdays'} in a different year than ${birthdayMismatches().length===1?'its':'their'} year letter. The year letter wins: the birthday is set to Feb 1 of the letter's year.</p>
+               <button type="button" class="btn ghost sm" onclick="openBirthdayFix()">Review &amp; fix</button>`
+            : `<p class="hint" style="margin:0;">Every birthday matches its year letter.</p>`}
         </div>`)}
       ${settingsSection('breeds', '🐂', 'Breeds', 'Breeds offered when adding or editing an animal', n((state.breeds||[]).length, 'breed', 'breeds'), `
         <p class="hint" style="margin:0 0 10px;">Breeds you add here show up in the Breed dropdown when adding or editing an animal.</p>
