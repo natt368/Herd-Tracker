@@ -1904,6 +1904,12 @@ function viewAnimals(){
   const allSelected = list.length>0 && list.every(a=>selectedAnimalIds.has(a.id));
 
   return `
+    <div class="toolbar" style="margin-bottom:10px;">
+      <div class="section-title" style="margin:0;">Animals</div>
+      <div style="flex:1;"></div>
+      <button class="btn ghost" onclick="openImportModal()">Import .xlsx</button>
+      <button class="btn rust" id="add-animal-btn" onclick="openAnimalModal()">+ Add animal</button>
+    </div>
     <div class="toolbar">
       <input id="animal-search-input" class="search-input" type="text" placeholder="Search name, RFID, breed, or class…" value="${escapeHtml(animalFilters.search)}" oninput="animalFilters.search=this.value; render();">
       <select onchange="animalFilters.klass=this.value; render();">
