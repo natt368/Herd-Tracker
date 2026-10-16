@@ -100,7 +100,7 @@
   .eartag.bull{ background:var(--rust); color:var(--white); }
   .eartag.heifer{ background:#8A7A46; color:var(--white); }
   .eartag.steer{ background:#6E6249; color:var(--white); }
-  .eartag.calf-bull, .eartag.calf-heifer{ background:var(--tag); color:var(--white); }
+  .eartag.calf-bull, .eartag.calf-heifer, .eartag.calf-steer{ background:var(--tag); color:var(--white); }
   .eartag.sold, .eartag.deceased{ background:var(--ink-faint); color:var(--white); opacity:0.75; }
 
   /* ---------- Layout ---------- */
@@ -282,6 +282,14 @@
   .calf-meta{ font-size:11.5px; color:var(--ink-soft); }
   .no-calf{ font-size:12.5px; color:var(--ink-faint); font-style:italic; padding-left:16px; }
   .calf-row .btn{ flex-shrink:0; }
+  .type-chips{ display:flex; flex-wrap:wrap; gap:6px; }
+  .type-chip{ display:inline-flex; align-items:center; gap:6px; padding:6px 11px; border:1px solid var(--line); border-radius:16px; background:var(--white); font-size:12.5px; font-weight:600; cursor:pointer; user-select:none; text-transform:none; letter-spacing:0; }
+  .type-chip input{ margin:0; }
+  .type-chip:has(input:checked){ background:var(--rust); border-color:var(--rust); color:#FFF6E2; }
+  /* Beat the form's generic label styling (block, uppercase). */
+  .field #event-type-chips .type-chip{ display:inline-flex; flex-direction:row; align-items:center; margin:0; text-transform:none; letter-spacing:0; font-size:12.5px; color:var(--ink); }
+  .field #event-type-chips .type-chip:has(input:checked){ color:#FFF6E2; }
+  .field #event-type-chips .type-chip input{ width:auto; margin:0; }
   .age-pill{
     font-size:10.5px; font-weight:700; padding:2px 8px; border-radius:10px;
     text-transform:uppercase; letter-spacing:0.03em;
@@ -770,13 +778,15 @@ var animalFilters = { search:'', klass:'all', status:'inherd', pasture:'all' };
 var selectedAnimalIds = new Set();
 var storageReady = false;
 
-var CLASSES = ['Cow','Bull','Heifer','Steer','Bull Calf','Heifer Calf'];
+var CLASSES = ['Cow','Bull','Heifer','Steer','Bull Calf','Heifer Calf','Steer Calf'];
+// Treatment procedures offered when Treatment is one of the event types.
+var TREATMENT_OPTIONS = ['Branding','Castrating','Dehorning','Deworming','Delousing / pour-on','Implanting','Hoof trimming','Antibiotics','Pinkeye treatment','Foot rot treatment'];
 var EVENT_TYPES = ['Vaccination','Treatment','Weight Check','Calving','Weaning','Pregnancy Check','Death / Loss','Sale','Purchase','Other'];
 var BREED_PALETTE = ['#A8481F','#4C6B3A','#C97A2B','#8A7A46','#6E6249','#37501F','#7E3517','#965A1B','#5B4636','#3C6E71','#7A4B8A','#B23A2E'];
 var GESTATION_DAYS = 283;
 /* A cow is paired from calving until her calf is weaned. Weaning is only ever recorded by hand
    (a Weaning event or the Wean button on the Pairs page); nothing is projected from a target age. */
-function isCalfClass(a){ return a && (a.klass==='Bull Calf' || a.klass==='Heifer Calf'); }
+function isCalfClass(a){ return a && (a.klass==='Bull Calf' || a.klass==='Heifer Calf' || a.klass==='Steer Calf'); }
 function isCalfAtSide(c){ return isCalfClass(c) && isActive(c) && !c.weanDate; }
 function calvesAtSideOf(dam){ return dam && dam.tagId ? state.animals.filter(c=> isCalfAtSide(c) && c.damId===dam.tagId) : []; }
 // A Weaning event on a calf weans that calf; on a cow it weans her calves at side.
@@ -1149,7 +1159,7 @@ function animalByTag(tag){ return state.animals.find(a=>a.tagId===tag); }
 function eartagClass(a){
   if(a.status==='sold') return 'sold';
   if(a.status==='deceased') return 'deceased';
-  const map = { 'Cow':'cow','Bull':'bull','Heifer':'heifer','Steer':'steer','Bull Calf':'calf-bull','Heifer Calf':'calf-heifer' };
+  const map = { 'Cow':'cow','Bull':'bull','Heifer':'heifer','Steer':'steer','Bull Calf':'calf-bull','Heifer Calf':'calf-heifer','Steer Calf':'calf-steer' };
   return map[a.klass] || 'cow';
 }
 /* The RFID (stored as tagId) links animals together but is only shown when adding or editing
@@ -1594,7 +1604,7 @@ function getUpcomingTasks(){
     note = String(note || '').trim();
     if(note && !g.notes.includes(note)) g.notes.push(note);
   };
-  const detail = ev=> ev.vaccine ? ' · ' + ev.vaccine : (ev.pregResult ? ' · ' + ev.pregResult : '');
+  const detail = ev=> { const d = eventDetail(ev); return d ? ' · ' + d : ''; };
 
   state.events.forEach(ev=>{
     // General events (no animals): show from today onwards.
@@ -1653,7 +1663,7 @@ var summaryFilters = { klass:'all', pasture:'all', groupBy:'age' };
 var summaryBuckets = [];
 var SUMMARY_CLASS_FILTERS = [
   ['all','All animals'], ['Cow','Cows'], ['preg','Pregnant (Active – Preg)'], ['Bred Heifer','Bred heifers'], ['Open Heifer','Open heifers'],
-  ['Heifer','All heifers'], ['Bull','Bulls'], ['Steer','Steers'], ['calves','Calves'], ['atside','Calves at side'],
+  ['Heifer','All heifers'], ['Bull','Bulls'], ['Steer','Steers'], ['Steer Calf','Steer calves'], ['calves','Calves'], ['atside','Calves at side'],
 ];
 var SUMMARY_GROUPS = [['age','Age'], ['class','Class'], ['pasture','Pasture'], ['breed','Breed'], ['yearLetter','Year letter']];
 // Open the summary pre-filtered from a dashboard card (always by age, across all pastures).
@@ -1666,7 +1676,7 @@ function summaryAnimals(){
   return state.animals.filter(a=>{
     if(!isActive(a)) return false;
     const k = summaryFilters.klass;
-    if(k==='calves'){ if(a.klass!=='Bull Calf' && a.klass!=='Heifer Calf') return false; }
+    if(k==='calves'){ if(!isCalfClass(a)) return false; }
     if(k==='atside'){ if(!isCalfAtSide(a)) return false; }
     else if(k==='preg'){ if(a.status!=='active-preg') return false; }
     else if(k==='Bred Heifer' || k==='Open Heifer'){ if(classLabel(a)!==k) return false; }
@@ -1994,7 +2004,7 @@ function viewDashboard(){
           return `<div class="task-item" ${attrs}>
             <div class="task-dot ok"></div>
             <div class="task-body">
-              <div class="task-title">${escapeHtml(ev.type)}${ev.vaccine ? ' · '+escapeHtml(ev.vaccine) : ''} — ${who}</div>
+              <div class="task-title">${escapeHtml(ev.type)}${eventDetail(ev) ? ' · '+escapeHtml(eventDetail(ev)) : ''} — ${who}</div>
               <div class="task-sub">${escapeHtml(ev.notes||'')}</div>
             </div>
             <div class="task-when ok">${fmtDate(ev.date)}</div>
@@ -2605,7 +2615,7 @@ function eventGroupKey(ev){
   if(ev.general) return 'x:' + ev.id;
   if(ev.groupId) return 'g:' + ev.groupId;
   if(ev.individual) return 'i:' + ev.id;
-  return 'l:' + [ev.type, ev.date, ev.vaccine||'', ev.pregResult||'', ev.notes||'', ev.nextDue||''].join('|');
+  return 'l:' + [ev.type, ev.date, ev.vaccine||'', ev.treatment||'', ev.pregResult||'', ev.notes||'', ev.nextDue||''].join('|');
 }
 function groupEvents(events){
   const map = new Map();
@@ -2649,7 +2659,7 @@ function deleteGeneralEvent(id){
   render();
   toast('Event deleted');
 }
-function eventDetail(ev){ return ev.vaccine || ev.pregResult || ''; }
+function eventDetail(ev){ return ev.vaccine || ev.treatment || ev.pregResult || ''; }
 var eventGroupCache = [];
 function openEventGroup(idx){
   const g = eventGroupCache[idx];
@@ -2714,7 +2724,7 @@ function viewHealth(){
             return `<tr onclick="${click}">
               <td class="num-cell">${fmtDate(ev.date)}</td>
               <td>${g.isGroup ? groupHeadHtml(g) : (a? eartag(a) : '<span class="muted">Unknown</span>')}</td>
-              <td>${escapeHtml(ev.type)}${ev.vaccine || ev.pregResult ? `<div class="muted" style="font-size:11.5px;margin-top:2px;">${escapeHtml(ev.vaccine || ev.pregResult)}</div>`:''}</td>
+              <td>${escapeHtml(ev.type)}${eventDetail(ev) ? `<div class="muted" style="font-size:11.5px;margin-top:2px;">${escapeHtml(eventDetail(ev))}</div>`:''}</td>
               <td class="muted">${escapeHtml(ev.notes||'—')}</td>
               <td class="num-cell">${ev.nextDue? fmtDate(ev.nextDue) : '—'}</td>
             </tr>`;
@@ -3990,6 +4000,7 @@ function normalizeHeader(h){ return String(h||'').trim().toLowerCase().replace(/
 function normalizeClass(v){
   const s = String(v||'').trim().toLowerCase();
   if(!s) return 'Cow';
+  if(s.includes('steer') && s.includes('calf')) return 'Steer Calf';
   if(s.includes('bull') && s.includes('calf')) return 'Bull Calf';
   if(s.includes('heifer') && s.includes('calf')) return 'Heifer Calf';
   if(s.includes('steer')) return 'Steer';
@@ -4344,11 +4355,17 @@ function openEventModal(presetAnimalId, presetGroupIds){
         <input type="text" name="generalTitle" id="general-title-input" maxlength="120" placeholder="e.g. Bull sale at Lethbridge" autocomplete="off">
         <p class="hint">For things not tied to an animal, like a sale, a vet visit or hauling. Future dates show up in Upcoming on the Home page.</p>
       </div>
-      <div class="field-row">
-        <div class="field" id="event-type-field"><label>Event type *</label>
-          <select name="type" id="event-type-select" onchange="toggleCalvingFields(); toggleVaccineField(); togglePregField(); enforceGroupCalvingRestriction();">${EVENT_TYPES.map(t=>`<option value="${t}">${t}</option>`).join('')}</select>
+      <div class="field" id="event-type-field"><label>Event type(s) *</label>
+        <div class="type-chips" id="event-type-chips">
+          ${EVENT_TYPES.map((t,k)=>`<label class="type-chip"><input type="checkbox" name="types" value="${t}" ${k===0?'checked':''} onchange="onEventTypesChange()"><span>${t}</span></label>`).join('')}
         </div>
-        <div class="field"><label>Date *</label><input type="date" name="date" required value="${todayStr()}"></div>
+        <p class="hint">Tick one or more. Each type is saved as its own record.</p>
+      </div>
+      <div class="field"><label>Date *</label><input type="date" name="date" required value="${todayStr()}"></div>
+      <div id="treatment-field" style="display:none;" class="field">
+        <label>Treatments</label>
+        <div class="checkbox-list" style="max-height:none;">${TREATMENT_OPTIONS.map(t=>`<label class="checkbox-row"><input type="checkbox" name="treatmentOpts" value="${t}"> ${t}</label>`).join('')}</div>
+        <p class="hint">Castrating moves a bull calf to <b>Steer Calf</b> (and a bull to <b>Steer</b>).</p>
       </div>
       <div id="preg-field" style="display:none;" class="field">
         <label>Result *</label>
@@ -4388,7 +4405,7 @@ function openEventModal(presetAnimalId, presetGroupIds){
   `;
   document.getElementById('modal-root').innerHTML = modalShell('Log event', body);
   // Show the fields for the type that's selected when the form opens (Vaccination by default).
-  toggleCalvingFields(); toggleVaccineField(); togglePregField();
+  onEventTypesChange();
   if(preset.size) setEventMode('group');
 }
 function setEventMode(mode){
@@ -4406,8 +4423,8 @@ function setEventMode(mode){
   show('next-due-field', !general);
   const titleInput = document.getElementById('general-title-input');
   if(titleInput) titleInput.required = general;
-  if(general){ ['vaccine-field','preg-field','calving-fields'].forEach(id=>show(id, false)); }
-  else { toggleCalvingFields(); toggleVaccineField(); togglePregField(); }
+  if(general){ ['vaccine-field','preg-field','calving-fields','treatment-field'].forEach(id=>show(id, false)); }
+  else onEventTypesChange();
   const indivBlock = document.getElementById('individual-animal-block');
   const groupBlock = document.getElementById('group-animal-block');
   if(indivBlock) indivBlock.style.display = mode==='individual' ? 'block' : 'none';
@@ -4424,26 +4441,37 @@ function quickSelectPastureForEvent(name){
   const boxes = document.querySelectorAll('#group-animal-checklist input[type=checkbox]');
   boxes.forEach(cb=>{ if(cb.dataset.pasture === name) cb.checked = true; });
 }
+// The event types ticked in the Log event form.
+function eventTypesChecked(){ return [...document.querySelectorAll('#event-type-chips input:checked')].map(c=>c.value); }
+function hasEventType(t){ return eventTypesChecked().includes(t); }
+// Tick exactly these types (used by shortcuts and tests).
+function setEventTypes(types){
+  document.querySelectorAll('#event-type-chips input').forEach(c=>{ c.checked = types.includes(c.value); });
+  onEventTypesChange();
+}
+function onEventTypesChange(){
+  toggleCalvingFields(); toggleVaccineField(); togglePregField(); toggleTreatmentField();
+  enforceGroupCalvingRestriction();
+}
+function toggleTreatmentField(){
+  const box = document.getElementById('treatment-field');
+  if(box) box.style.display = hasEventType('Treatment') ? 'block' : 'none';
+}
 function enforceGroupCalvingRestriction(){
   const modeInput = document.getElementById('event-mode-input');
-  const typeSel = document.getElementById('event-type-select');
-  if(!modeInput || !typeSel) return;
-  if(modeInput.value==='group' && typeSel.value==='Calving'){
+  if(!modeInput) return;
+  if(modeInput.value==='group' && hasEventType('Calving')){
     toast('Calving must be logged for one animal — switched to Individual');
     setEventMode('individual');
   }
 }
 function toggleCalvingFields(){
-  const sel = document.getElementById('event-type-select');
   const box = document.getElementById('calving-fields');
-  if(!sel || !box) return;
-  box.style.display = sel.value==='Calving' ? 'block' : 'none';
+  if(box) box.style.display = hasEventType('Calving') ? 'block' : 'none';
 }
 function togglePregField(){
-  const sel = document.getElementById('event-type-select');
   const box = document.getElementById('preg-field');
-  if(!sel || !box) return;
-  box.style.display = sel.value==='Pregnancy Check' ? 'block' : 'none';
+  if(box) box.style.display = hasEventType('Pregnancy Check') ? 'block' : 'none';
 }
 // A pregnancy check result updates the animal's status (only for animals still in the herd).
 function applyPregResult(a, result){
@@ -4452,17 +4480,31 @@ function applyPregResult(a, result){
   else if(result==='Open' && a.status==='active-preg') a.status = 'active';
 }
 function toggleVaccineField(){
-  const sel = document.getElementById('event-type-select');
   const box = document.getElementById('vaccine-field');
-  if(!sel || !box) return;
-  box.style.display = sel.value==='Vaccination' ? 'block' : 'none';
+  if(box) box.style.display = hasEventType('Vaccination') ? 'block' : 'none';
+}
+// Castrating: a bull calf becomes a steer calf, a bull becomes a steer. Returns true if the class changed.
+function applyCastration(a){
+  if(!a) return false;
+  if(a.klass==='Bull Calf'){ a.klass = 'Steer Calf'; return true; }
+  if(a.klass==='Bull'){ a.klass = 'Steer'; return true; }
+  return false;
+}
+// What logging one event type does to the animal (status, weaning, castration).
+function applyEventEffects(a, type, date, treatments){
+  if(!a) return false;
+  if(type==='Weaning') applyWeaning(a, date);
+  if(type==='Death / Loss') a.status = 'deceased';
+  if(type==='Sale') a.status = 'sold';
+  if(type==='Treatment' && (treatments||[]).includes('Castrating')) return applyCastration(a);
+  return false;
 }
 function saveEvent(evt){
   evt.preventDefault();
   const f = evt.target;
   const modeInput = document.getElementById('event-mode-input');
   const mode = modeInput ? modeInput.value : 'individual';
-  const type = f.type.value;
+  const types = mode==='general' ? [] : eventTypesChecked();
 
   if(mode==='general'){
     const title = f.generalTitle.value.trim();
@@ -4475,87 +4517,75 @@ function saveEvent(evt){
     return;
   }
 
+  if(!types.length){ toast('Tick at least one event type'); return; }
+  const date = f.date.value;
+  const notes = f.notes.value.trim();
+  const nextDue = f.nextDue.value || null;
+  const vaccines = types.includes('Vaccination') ? selectedVaccines(f) : [];
+  const treatments = types.includes('Treatment') ? [...f.querySelectorAll('input[name="treatmentOpts"]:checked')].map(c=>c.value) : [];
+  const pregResult = types.includes('Pregnancy Check') ? f.pregResult.value : '';
+  const detailsFor = type => ({
+    vaccine: type==='Vaccination' ? vaccines.join(', ') : '',
+    vaccines: type==='Vaccination' ? vaccines.slice() : [],
+    ...(type==='Treatment' && treatments.length ? { treatment: treatments.join(', '), treatments: treatments.slice() } : {}),
+    ...(type==='Pregnancy Check' ? { pregResult } : {}),
+  });
+  let castrated = 0;
+
   if(mode==='group'){
-    if(type==='Calving'){ toast('Calving must be logged for one animal at a time'); return; }
+    if(types.includes('Calving')){ toast('Calving must be logged for one animal at a time'); return; }
     const checked = Array.from(f.querySelectorAll('input[name="groupAnimalIds"]:checked')).map(cb=>cb.value);
     if(checked.length===0){ toast('Select at least one animal'); return; }
-    const date = f.date.value;
-    const notes = f.notes.value.trim();
-    const nextDue = f.nextDue.value || null;
-    const vaccines = type==='Vaccination' ? selectedVaccines(f) : [];
-    const vaccine = vaccines.join(', ');
-    const pregResult = type==='Pregnancy Check' ? f.pregResult.value : '';
-    // One group id ties the records together so the log shows them as one group event.
-    const groupId = uid();
     const groupPastures = [...new Set(checked.map(id=> ((animalById(id)||{}).pasture||'').trim()))];
     const groupLabel = groupPastures.length===1 ? groupPastures[0] : '';
-    checked.forEach(animalId=>{
-      const ev = { id: uid(), animalId, type, date, notes, nextDue, vaccine, vaccines: vaccines.slice(), groupId, groupLabel };
-      if(pregResult){ ev.pregResult = pregResult; applyPregResult(animalById(animalId), pregResult); }
-      state.events.push(ev);
-      if(type==='Weaning') applyWeaning(animalById(animalId), date);
-      if(type==='Death / Loss'){
+    types.forEach(type=>{
+      // One group id per type ties the records together so the log shows each as one group event.
+      const groupId = uid();
+      checked.forEach(animalId=>{
         const a = animalById(animalId);
-        if(a) a.status = 'deceased';
-      }
-      if(type==='Sale'){
-        const a = animalById(animalId);
-        if(a) a.status = 'sold';
-      }
+        state.events.push({ id: uid(), animalId, type, date, notes, nextDue, ...detailsFor(type), groupId, groupLabel });
+        if(type==='Pregnancy Check') applyPregResult(a, pregResult);
+        if(applyEventEffects(a, type, date, treatments)) castrated++;
+      });
     });
     saveState();
     closeModal();
     render();
-    toast(`Logged ${type} for ${checked.length} animal${checked.length===1?'':'s'}`);
+    toast(`Logged ${types.join(' + ')} for ${checked.length} animal${checked.length===1?'':'s'}` + (castrated ? ` · ${castrated} moved to steer` : ''));
     return;
   }
 
-  if(f.type.value === 'Calving'){
+  if(types.includes('Calving')){
     const calfTagId = f.calfTagId.value.trim();
     if(!calfTagId){ toast('Enter the calf\'s RFID'); return; }
     if(!f.calfName.value.trim()){ toast('Enter a name for the calf'); return; }
     if(animalByTag(calfTagId)){ toast('That RFID is already in use'); return; }
   }
-
-  const vaccines = f.type.value==='Vaccination' ? selectedVaccines(f) : [];
-  const ev = {
-    id: uid(),
-    animalId: f.animalId.value,
-    type: f.type.value,
-    date: f.date.value,
-    notes: f.notes.value.trim(),
-    nextDue: f.nextDue.value || null,
-    vaccine: vaccines.join(', '),
-    vaccines,
-    individual: true,
-  };
-  if(ev.type==='Pregnancy Check'){
-    ev.pregResult = f.pregResult.value;
-    applyPregResult(animalById(ev.animalId), ev.pregResult);
-  }
-  state.events.push(ev);
+  const animalId = f.animalId.value;
+  const a = animalById(animalId);
+  types.forEach(type=>{
+    state.events.push({ id: uid(), animalId, type, date, notes, nextDue, ...detailsFor(type), individual: true });
+    if(type==='Pregnancy Check') applyPregResult(a, pregResult);
+    if(applyEventEffects(a, type, date, treatments)) castrated++;
+  });
 
   const weight = f.weight.value;
-  if(weight){
-    const a = animalById(ev.animalId);
-    if(a){
-      a.weights = a.weights || [];
-      a.weights.push({ date: ev.date, lbs: Number(weight) });
-    }
+  if(weight && a){
+    a.weights = a.weights || [];
+    a.weights.push({ date, lbs: Number(weight) });
   }
-  if(ev.type==='Weaning') applyWeaning(animalById(ev.animalId), ev.date);
   let calfAdded = false, promotedHeifer = null;
-  if(ev.type==='Calving'){
-    const cow = animalById(ev.animalId);
+  if(types.includes('Calving') && a){
+    const cow = a;
     const calfTagId = f.calfTagId.value.trim();
     const calfSex = f.calfSex.value;
-    if(cow && calfTagId){
+    if(calfTagId){
       const rec = state.breeding.find(b=> b.cowTagId===cow.tagId && !b.actualCalvingDate);
-      if(rec){ rec.actualCalvingDate = ev.date; rec.result = 'Bred'; rec.calfTagId = calfTagId; }
+      if(rec){ rec.actualCalvingDate = date; rec.result = 'Bred'; rec.calfTagId = calfTagId; }
       if(cow.status==='active-preg') cow.status = 'active';
       state.animals.push({
         id: uid(), tagId: calfTagId, name: f.calfName.value.trim(), klass: calfSex==='Bull' ? 'Bull Calf' : 'Heifer Calf',
-        breed: cow.breed || '', dob: ev.date, yearLetter: letterForDate(ev.date),
+        breed: cow.breed || '', dob: date, yearLetter: letterForDate(date),
         damId: cow.tagId, sireId: rec ? (rec.sireTagId||'') : '',
         status: 'active', pasture: cow.pasture || '', notes: '',
         weights: [], weanDate: null
@@ -4564,18 +4594,12 @@ function saveEvent(evt){
       if(cow.klass==='Heifer') promotedHeifer = displayName(cow);
     }
   }
-  if(ev.type==='Death / Loss'){
-    const a = animalById(ev.animalId);
-    if(a) a.status = 'deceased';
-  }
-  if(ev.type==='Sale'){
-    const a = animalById(ev.animalId);
-    if(a) a.status = 'sold';
-  }
   saveState();
   closeModal();
   render();
-  toast(calfAdded ? (promotedHeifer ? `Calf added — ${promotedHeifer} moved from Heifers to Cows` : 'Event logged and calf added to the herd') : 'Event logged');
+  const what = types.length > 1 ? `${types.join(' + ')} logged` : 'Event logged';
+  toast(calfAdded ? (promotedHeifer ? `Calf added — ${promotedHeifer} moved from Heifers to Cows` : 'Event logged and calf added to the herd')
+    : castrated ? `${what} — ${displayName(a)} is now a ${a.klass}` : what);
 }
 
 /* ---------- Breeding modal ---------- */
@@ -4819,7 +4843,7 @@ function openDrawer(id){
       <div class="drawer-section">
         <h4>Event history</h4>
         ${events.length===0? `<p class="hint">No events logged yet.</p>` :
-          events.map(e=>`<div class="mini-row"><span class="t">${escapeHtml(e.type)}${e.vaccine? ' — '+escapeHtml(e.vaccine):''}${e.pregResult? ' — '+escapeHtml(e.pregResult):''}${e.notes? ' — '+escapeHtml(e.notes):''}</span><span class="d">${fmtDate(e.date)}</span></div>`).join('')}
+          events.map(e=>`<div class="mini-row"><span class="t">${escapeHtml(e.type)}${e.vaccine? ' — '+escapeHtml(e.vaccine):''}${e.treatment? ' — '+escapeHtml(e.treatment):''}${e.pregResult? ' — '+escapeHtml(e.pregResult):''}${e.notes? ' — '+escapeHtml(e.notes):''}</span><span class="d">${fmtDate(e.date)}</span></div>`).join('')}
       </div>
     </div>
   </div>`;
