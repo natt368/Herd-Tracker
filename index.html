@@ -764,7 +764,8 @@
 ========================================================= */
 var state = { animals: [], events: [], breeding: [], pastures: [], breeds: [], vaccines: [] };
 var currentTab = 'dashboard';
-var animalFilters = { search:'', klass:'all', status:'active', pasture:'all' };
+// status: 'inherd' = everything still in the herd (Active + Active – Preg); 'active' = Active only.
+var animalFilters = { search:'', klass:'all', status:'inherd', pasture:'all' };
 var selectedAnimalIds = new Set();
 var storageReady = false;
 
@@ -1408,7 +1409,10 @@ function animalMatchesSearch(a, q){
 }
 function getFilteredAnimals(){
   let list = state.animals.filter(a=>{
-    if(animalFilters.status!=='all' && !(animalFilters.status==='active' ? isActive(a) : a.status===animalFilters.status)) return false;
+    const st = animalFilters.status;
+    if(st==='inherd'){ if(!isActive(a)) return false; }
+    else if(st==='active'){ if(!isActive(a) || a.status==='active-preg') return false; }
+    else if(st!=='all' && a.status!==st) return false;
     if(animalFilters.klass==='Bred Heifer' || animalFilters.klass==='Open Heifer'){
       if(classLabel(a)!==animalFilters.klass) return false;
     } else if(animalFilters.klass!=='all' && a.klass!==animalFilters.klass) return false;
@@ -2019,7 +2023,8 @@ function viewAnimals(){
         <option value="__none__" ${animalFilters.pasture==='__none__'?'selected':''}>Unassigned</option>
       </select>
       <div class="chip-toggle">
-        <button class="chip ${animalFilters.status==='active'?'active':''}" onclick="animalFilters.status='active'; render();">Active</button>
+        <button class="chip ${animalFilters.status==='inherd'?'active':''}" onclick="animalFilters.status='inherd'; render();" title="Active and Active – Preg">In herd</button>
+        <button class="chip ${animalFilters.status==='active'?'active':''}" onclick="animalFilters.status='active'; render();" title="Active only, not pregnant">Active</button>
         <button class="chip ${animalFilters.status==='active-preg'?'active':''}" onclick="animalFilters.status='active-preg'; render();">Active – Preg</button>
         <button class="chip ${animalFilters.status==='sold'?'active':''}" onclick="animalFilters.status='sold'; render();">Sold</button>
         <button class="chip ${animalFilters.status==='deceased'?'active':''}" onclick="animalFilters.status='deceased'; render();">Deceased</button>
@@ -2200,7 +2205,7 @@ function viewPastures(){
 
 // Open the Animals tab filtered to one pasture ('__none__' = unassigned), showing every animal there.
 function viewAnimalsInPasture(name){
-  animalFilters = { search:'', klass:'all', status:'active', pasture: name };
+  animalFilters = { search:'', klass:'all', status:'inherd', pasture: name };
   setTab('animals');
   window.scrollTo(0, 0);
 }
