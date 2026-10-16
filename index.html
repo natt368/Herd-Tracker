@@ -281,6 +281,7 @@
   .calf-row{ display:flex; align-items:center; justify-content:space-between; gap:10px; }
   .calf-meta{ font-size:11.5px; color:var(--ink-soft); }
   .no-calf{ font-size:12.5px; color:var(--ink-faint); font-style:italic; padding-left:16px; }
+  .calf-row .btn{ flex-shrink:0; }
   .age-pill{
     font-size:10.5px; font-weight:700; padding:2px 8px; border-radius:10px;
     text-transform:uppercase; letter-spacing:0.03em;
@@ -773,7 +774,20 @@ var CLASSES = ['Cow','Bull','Heifer','Steer','Bull Calf','Heifer Calf'];
 var EVENT_TYPES = ['Vaccination','Treatment','Weight Check','Calving','Weaning','Pregnancy Check','Death / Loss','Sale','Purchase','Other'];
 var BREED_PALETTE = ['#A8481F','#4C6B3A','#C97A2B','#8A7A46','#6E6249','#37501F','#7E3517','#965A1B','#5B4636','#3C6E71','#7A4B8A','#B23A2E'];
 var GESTATION_DAYS = 283;
-var WEAN_TARGET_DAYS = 205;
+/* A cow is paired from calving until her calf is weaned. Weaning is only ever recorded by hand
+   (a Weaning event or the Wean button on the Pairs page); nothing is projected from a target age. */
+function isCalfClass(a){ return a && (a.klass==='Bull Calf' || a.klass==='Heifer Calf'); }
+function isCalfAtSide(c){ return isCalfClass(c) && isActive(c) && !c.weanDate; }
+function calvesAtSideOf(dam){ return dam && dam.tagId ? state.animals.filter(c=> isCalfAtSide(c) && c.damId===dam.tagId) : []; }
+// A Weaning event on a calf weans that calf; on a cow it weans her calves at side.
+function applyWeaning(a, date){
+  if(!a) return;
+  if(isCalfClass(a)) a.weanDate = date;
+  else calvesAtSideOf(a).forEach(c=>{ c.weanDate = date; });
+}
+function currentPairs(){
+  return state.animals.filter(a=> isActive(a) && !isCalfClass(a)).map(dam=>({ dam, calves: calvesAtSideOf(dam) })).filter(p=> p.calves.length);
+}
 
 /* =========================================================
    STORAGE
@@ -1458,7 +1472,7 @@ function renderTabs(){
   el.innerHTML = TABS.map(t=>{
     let count = '';
     if(t.id==='animals') count = state.animals.filter(a=>isActive(a)).length;
-    if(t.id==='pairs') count = state.animals.filter(a=>a.klass==='Cow' && isActive(a)).length;
+    if(t.id==='pairs') count = currentPairs().length;
     if(t.id==='pastures') count = state.pastures.length;
     if(t.id==='health') count = state.events.length;
     if(t.id==='breeding') count = state.breeding.length;
@@ -1604,13 +1618,6 @@ function getUpcomingTasks(){
     }
   });
 
-  state.animals.filter(a=> (a.klass==='Bull Calf' || a.klass==='Heifer Calf') && isActive(a) && !a.weanDate).forEach(a=>{
-    const age = ageInDays(a.dob);
-    if(age===null) return;
-    const date = addDays(today, WEAN_TARGET_DAYS - age);
-    add(`wean|${date}`, 'Weaning', 'Weaning window', date, a.id);
-  });
-
   state.breeding.filter(b=> b.result!=='Open' && !b.actualCalvingDate).forEach(b=>{
     const cow = animalByTag(b.cowTagId);
     if(!cow || !isActive(cow)) return;
@@ -1646,7 +1653,7 @@ var summaryFilters = { klass:'all', pasture:'all', groupBy:'age' };
 var summaryBuckets = [];
 var SUMMARY_CLASS_FILTERS = [
   ['all','All animals'], ['Cow','Cows'], ['preg','Pregnant (Active – Preg)'], ['Bred Heifer','Bred heifers'], ['Open Heifer','Open heifers'],
-  ['Heifer','All heifers'], ['Bull','Bulls'], ['Steer','Steers'], ['calves','Calves'],
+  ['Heifer','All heifers'], ['Bull','Bulls'], ['Steer','Steers'], ['calves','Calves'], ['atside','Calves at side'],
 ];
 var SUMMARY_GROUPS = [['age','Age'], ['class','Class'], ['pasture','Pasture'], ['breed','Breed'], ['yearLetter','Year letter']];
 // Open the summary pre-filtered from a dashboard card (always by age, across all pastures).
@@ -1660,6 +1667,7 @@ function summaryAnimals(){
     if(!isActive(a)) return false;
     const k = summaryFilters.klass;
     if(k==='calves'){ if(a.klass!=='Bull Calf' && a.klass!=='Heifer Calf') return false; }
+    if(k==='atside'){ if(!isCalfAtSide(a)) return false; }
     else if(k==='preg'){ if(a.status!=='active-preg') return false; }
     else if(k==='Bred Heifer' || k==='Open Heifer'){ if(classLabel(a)!==k) return false; }
     else if(k!=='all' && a.klass!==k) return false;
@@ -1917,7 +1925,7 @@ function viewDashboard(){
   const bredHeifers = active.filter(isBredHeifer).length;
   const pregnant = active.filter(a=>a.status==='active-preg').length;
   const heifers = active.filter(a=>a.klass==='Heifer').length - bredHeifers;
-  const calves = active.filter(a=>a.klass==='Bull Calf' || a.klass==='Heifer Calf').length;
+  const calves = active.filter(isCalfAtSide).length;
   const pairsCount = active.filter(a=>a.klass==='Cow').filter(cow => active.some(c=>c.damId===cow.tagId)).length;
 
   const allTasks = getUpcomingTasks();
@@ -1936,7 +1944,7 @@ function viewDashboard(){
       <div class="stat-card clickable" title="Cows by age" onclick="openSummary('Cow')"><div class="num">${cows}</div><div class="label">Cows&nbsp;›</div></div>
       <div class="stat-card clickable" title="Pregnant animals by age" onclick="openSummary('preg')"><div class="num">${pregnant}</div><div class="label">Pregnant&nbsp;›</div></div>
       <div class="stat-card clickable" title="Bred heifers by age" onclick="openSummary('Bred Heifer')"><div class="num">${bredHeifers}</div><div class="label">Bred heifers&nbsp;›</div></div>
-      <div class="stat-card clickable" title="Calves by age" onclick="openSummary('calves')"><div class="num">${calves}</div><div class="label">Calves at side&nbsp;›</div></div>
+      <div class="stat-card clickable" title="Calves at side (not weaned)" onclick="openSummary('atside')"><div class="num">${calves}</div><div class="label">Calves at side&nbsp;›</div></div>
       <div class="stat-card clickable" title="Open heifers by age" onclick="openSummary('Open Heifer')"><div class="num">${heifers}</div><div class="label">Open heifers&nbsp;›</div></div>
       <div class="stat-card clickable" title="Bulls by age" onclick="openSummary('Bull')"><div class="num">${bulls}</div><div class="label">Bulls&nbsp;›</div></div>
       <div class="stat-card clickable ${overdueCount>0?'accent':''}" title="Go to Upcoming & overdue" onclick="document.getElementById('upcoming-panel').scrollIntoView({behavior:'smooth', block:'start'})"><div class="num">${overdueCount}</div><div class="label">Overdue tasks&nbsp;›</div></div>
@@ -2082,44 +2090,51 @@ function viewAnimals(){
    PAIRS
 ========================================================= */
 function viewPairs(){
-  const cows = state.animals.filter(a=>a.klass==='Cow' && isActive(a)).sort(byName);
-  if(cows.length===0){
-    return `<div class="empty-state"><div class="icon">🐮</div><h3>No cows on file yet</h3><p>Add a cow to start tracking pairs.</p><button class="btn rust" onclick="openAnimalModal('Cow')">+ Add a cow</button></div>`;
-  }
-  return `
+  const pairs = currentPairs().sort((x,y)=> byName(x.dam, y.dam));
+  const cowsWithout = state.animals.filter(a=> a.klass==='Cow' && isActive(a) && !calvesAtSideOf(a).length).length;
+  const head = `
     <div class="section-title">Cow / calf pairs</div>
-    <p class="section-desc">Each cow with her calf(ves) currently at side. Weaning windows target ${WEAN_TARGET_DAYS} days.</p>
+    <p class="section-desc">A cow is paired from the day she calves until her calf is weaned. Weaning is recorded by hand: tap <b>Wean</b> below, or log a Weaning event.</p>`;
+  if(!pairs.length) return head + `<div class="empty-state"><div class="icon">🐮</div><h3>No pairs right now</h3><p>Log a <b>Calving</b> event for a cow and she'll show here with her calf until it's weaned.</p></div>`;
+  return head + `
+    <p class="hint" style="margin:-6px 0 14px;"><b>${pairs.length}</b> pair${pairs.length===1?'':'s'}${cowsWithout ? ` · ${cowsWithout} cow${cowsWithout===1?' has':'s have'} no calf at side` : ''}.</p>
     <div class="pair-grid">
-      ${cows.map(cow=>{
-        const calves = state.animals.filter(c=> c.damId===cow.tagId && isActive(c) && !c.weanDate);
-        const w = latestWeight(cow);
-        return `<div class="pair-card">
+      ${pairs.map(({dam, calves})=>`<div class="pair-card">
           <div class="cow-row">
-            <div>
-              ${eartag(cow)}
-            </div>
-            <button class="btn ghost sm" onclick="openDrawer('${cow.id}')">Details</button>
+            <div>${eartag(dam)}</div>
+            <button class="btn ghost sm" onclick="openDrawer('${dam.id}')">Details</button>
           </div>
-          ${calves.length===0 ? `<div class="no-calf">No calf currently paired</div>` :
-          `<div class="pair-link">
+          <div class="pair-link">
             ${calves.map(calf=>{
-              const age = ageInDays(calf.dob);
-              const diff = WEAN_TARGET_DAYS - age;
-              const urg = diff<0? 'overdue' : diff<=21 ? 'due' : 'ok';
-              const label = diff<0 ? `${Math.abs(diff)}d past target` : diff<=21 ? `wean in ${diff}d` : `${diff}d to target`;
+              const days = ageInDays(calf.dob);
               return `<div class="calf-row">
                 <div>
-                  ${eartag(calf)}
-                  <div class="calf-meta">${ageLabel(calf.dob)} old · born ${fmtDate(calf.dob)}</div>
+                  ${eartag(calf)} <span class="muted" style="font-size:11.5px;">${escapeHtml(calf.klass)}</span>
+                  <div class="calf-meta">${calf.dob ? `Born ${fmtDate(calf.dob)}${days!==null ? ' · '+days+' day'+(days===1?'':'s')+' at side' : ''}` : 'Birth date not recorded'}</div>
                 </div>
-                <span class="age-pill ${urg}">${label}</span>
+                <button class="btn ghost sm" onclick="weanCalf('${calf.id}')">Wean</button>
               </div>`;
             }).join('')}
-          </div>`}
-        </div>`;
-      }).join('')}
+          </div>
+        </div>`).join('')}
     </div>
   `;
+}
+// Record weaning by hand: logs a Weaning event for the calf, which ends the pair.
+function weanCalf(id){
+  const calf = animalById(id);
+  if(!calf) return;
+  const ev = { id: uid(), animalId: calf.id, type: 'Weaning', date: todayStr(), notes: '', nextDue: null, vaccine: '', vaccines: [], individual: true };
+  state.events.push(ev);
+  calf.weanDate = ev.date;
+  saveState();
+  render();
+  toastAction(`${displayName(calf)} weaned today`, 'Undo', ()=>{
+    state.events = state.events.filter(e=> e.id!==ev.id);
+    calf.weanDate = null;
+    saveState();
+    render();
+  }, 10000);
 }
 
 /* =========================================================
@@ -4352,8 +4367,8 @@ function openEventModal(presetAnimalId, presetGroupIds){
         <div class="field-row">
           <div class="field"><label>Calf born *</label>
             <select name="calfSex">
-              <option value="Heifer">Heifer</option>
-              <option value="Bull">Bull</option>
+              <option value="Heifer">Heifer calf</option>
+              <option value="Bull">Bull calf</option>
             </select>
           </div>
           <div class="field"><label>Calf RFID *</label><input type="text" name="calfTagId" placeholder="e.g. 982 000123456789" autocomplete="off"></div>
@@ -4478,10 +4493,7 @@ function saveEvent(evt){
       const ev = { id: uid(), animalId, type, date, notes, nextDue, vaccine, vaccines: vaccines.slice(), groupId, groupLabel };
       if(pregResult){ ev.pregResult = pregResult; applyPregResult(animalById(animalId), pregResult); }
       state.events.push(ev);
-      if(type==='Weaning'){
-        const a = animalById(animalId);
-        if(a) a.weanDate = date;
-      }
+      if(type==='Weaning') applyWeaning(animalById(animalId), date);
       if(type==='Death / Loss'){
         const a = animalById(animalId);
         if(a) a.status = 'deceased';
@@ -4531,10 +4543,7 @@ function saveEvent(evt){
       a.weights.push({ date: ev.date, lbs: Number(weight) });
     }
   }
-  if(ev.type==='Weaning'){
-    const a = animalById(ev.animalId);
-    if(a) a.weanDate = ev.date;
-  }
+  if(ev.type==='Weaning') applyWeaning(animalById(ev.animalId), ev.date);
   let calfAdded = false, promotedHeifer = null;
   if(ev.type==='Calving'){
     const cow = animalById(ev.animalId);
