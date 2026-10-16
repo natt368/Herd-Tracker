@@ -445,6 +445,10 @@
     display:flex; flex-direction:column;
     height:246px; overflow:hidden;
   }
+  /* Phones show the animal list as cards with no header row, so select-all gets its own row. */
+  .select-all-row{ display:none; align-items:center; gap:10px; font-size:13.5px; font-weight:600; margin:0 0 10px; padding:10px 14px; background:var(--surface); border:1px solid var(--line-soft); border-radius:var(--radius); cursor:pointer; }
+  .select-all-row input{ width:18px; height:18px; }
+  @media (max-width:640px){ .select-all-row{ display:flex; } }
   .weight-strip{ display:flex; flex-wrap:wrap; align-items:center; gap:6px 18px; background:var(--surface); border:1px solid var(--line-soft); border-radius:var(--radius); padding:10px 14px; margin-bottom:12px; font-size:13px; box-shadow:var(--shadow); }
   .weight-strip .ws-title{ font-weight:800; text-transform:uppercase; letter-spacing:.06em; font-size:11.5px; color:var(--ink-soft); }
   .weight-strip .ws-k{ font-size:11.5px; color:var(--ink-soft); text-transform:uppercase; letter-spacing:.05em; }
@@ -2035,10 +2039,12 @@ function viewAnimals(){
     ${selectedAnimalIds.size>0 ? `<div class="bulk-bar">
       <span>${selectedAnimalIds.size} selected</span>
       <button class="btn rust sm" onclick="openBulkMoveModal()">Move to pasture</button>
+      <button class="btn rust sm" onclick="openBulkEventModal()">Log event</button>
       <button class="btn ghost sm" onclick="clearSelection()">Clear</button>
     </div>` : ''}
     ${list.length===0 ? `<div class="empty-state"><div class="icon">🏷️</div><h3>No animals match</h3><p>Try a different filter, or add your first animal.</p><button class="btn rust" onclick="openAnimalModal()">+ Add animal</button></div>` :
-    `<div class="panel" style="padding:6px 22px 10px;">
+    `<label class="select-all-row"><input type="checkbox" ${allSelected?'checked':''} onchange="toggleSelectAll(this.checked)"> Select all ${list.length} shown</label>
+    <div class="panel" style="padding:6px 22px 10px;">
       <table class="ledger">
         <thead><tr>
           <th style="width:28px;"><input type="checkbox" ${allSelected?'checked':''} onchange="toggleSelectAll(this.checked)"></th>
@@ -2124,6 +2130,14 @@ function toggleSelectAll(checked){
   render();
 }
 function clearSelection(){ selectedAnimalIds.clear(); render(); }
+// Log one event for just the animals ticked on the Animals page (opens the form in Group mode).
+function openBulkEventModal(){
+  const ids = Array.from(selectedAnimalIds).filter(id=>{ const a = animalById(id); return a && isActive(a); });
+  if(ids.length===0){ toast('Select at least one active animal'); return; }
+  const skipped = selectedAnimalIds.size - ids.length;
+  openEventModal(null, ids);
+  if(skipped) toast(`${skipped} sold or deceased animal${skipped===1?' was':'s were'} left out`);
+}
 function openBulkMoveModal(){
   const ids = Array.from(selectedAnimalIds);
   if(ids.length===0){ toast('Select at least one animal'); return; }
@@ -4264,8 +4278,10 @@ function downloadImportTemplate(){
 }
 
 /* ---------- Event modal ---------- */
-function openEventModal(presetAnimalId){
-  const activeAnimals = state.animals.filter(a=>isActive(a)).sort(byName);
+function openEventModal(presetAnimalId, presetGroupIds){
+  const preset = new Set(presetGroupIds || []);
+  // Pre-selected animals (from the Animals page) are ticked and listed first.
+  const activeAnimals = state.animals.filter(a=>isActive(a)).sort((x,y)=> (preset.has(y.id) - preset.has(x.id)) || byName(x,y));
   if(activeAnimals.length===0){
     toast('Add an animal first');
     return;
@@ -4281,12 +4297,13 @@ function openEventModal(presetAnimalId){
   const groupBlock = presetAnimalId ? '' : `
     <div class="field" id="group-animal-block" style="display:none;">
       <label>Select animals *</label>
+      ${preset.size ? `<p class="hint" style="margin:0 0 8px;"><b>${preset.size}</b> animal${preset.size===1?'':'s'} selected on the Animals page ${preset.size===1?'is':'are'} ticked below.</p>` : ''}
       <select id="event-pasture-quickselect" onchange="quickSelectPastureForEvent(this.value)" style="margin-bottom:8px;">
         <option value="">Quick-select by pasture…</option>
         ${state.pastures.map(p=>`<option value="${escapeHtml(p.name)}">${escapeHtml(p.name)}</option>`).join('')}
       </select>
       <div class="checkbox-list" id="group-animal-checklist">
-        ${activeAnimals.map(a=>`<label class="checkbox-row"><input type="checkbox" name="groupAnimalIds" value="${a.id}" data-pasture="${escapeHtml(a.pasture||'')}"> ${eartag(a)} ${a.klass}${a.name? ' '+escapeHtml(a.name):''}${a.pasture? ` <span class="muted" style="font-size:11px;">— ${escapeHtml(a.pasture)}</span>`:''}</label>`).join('')}
+        ${activeAnimals.map(a=>`<label class="checkbox-row"><input type="checkbox" name="groupAnimalIds" value="${a.id}" data-pasture="${escapeHtml(a.pasture||'')}" ${preset.has(a.id)?'checked':''}> ${eartag(a)} ${a.klass}${a.name? ' '+escapeHtml(a.name):''}${a.pasture? ` <span class="muted" style="font-size:11px;">— ${escapeHtml(a.pasture)}</span>`:''}</label>`).join('')}
       </div>
     </div>`;
   const body = `
@@ -4352,6 +4369,7 @@ function openEventModal(presetAnimalId){
   document.getElementById('modal-root').innerHTML = modalShell('Log event', body);
   // Show the fields for the type that's selected when the form opens (Vaccination by default).
   toggleCalvingFields(); toggleVaccineField(); togglePregField();
+  if(preset.size) setEventMode('group');
 }
 function setEventMode(mode){
   const indivBtn = document.getElementById('event-mode-individual-btn');
