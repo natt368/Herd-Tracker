@@ -282,8 +282,10 @@
   .calf-meta{ font-size:11.5px; color:var(--ink-soft); }
   .no-calf{ font-size:12.5px; color:var(--ink-faint); font-style:italic; padding-left:16px; }
   .calf-row .btn{ flex-shrink:0; }
-  .sync-bar{ flex-basis:100%; order:10; background:#F6E7C8; color:var(--leather, #4A2C17); border:1px solid var(--brass); border-radius:var(--radius); padding:7px 12px; font-size:13px; font-weight:700; text-align:center; }
-  .sync-bar[hidden]{ display:none; }
+  .conn-btn .conn-badge{ position:absolute; right:-3px; bottom:-3px; min-width:17px; height:17px; padding:0 4px; border-radius:9px; font-size:10.5px; font-weight:800; line-height:14px; text-align:center; color:#fff; border:1.5px solid #F6E7C8; pointer-events:none; }
+  .conn-btn .conn-badge.ok{ background:var(--pasture); }
+  .conn-btn .conn-badge.waiting{ background:var(--danger); }
+  .conn-btn .conn-badge:empty{ display:none; }
   .pencil-btn{ display:inline-flex; align-items:center; justify-content:center; width:30px; height:30px; border-radius:50%; border:1px solid var(--line); background:var(--surface); color:var(--ink-soft); cursor:pointer; flex-shrink:0; }
   .pencil-btn:hover{ color:var(--rust); border-color:var(--rust); background:var(--white); }
   .drawer-log-btn{ display:block; width:100%; justify-content:center; text-align:center; padding:12px 16px; font-size:15px; margin:12px 0 16px; }
@@ -738,6 +740,10 @@
       <div id="global-search-results" class="global-search-results" style="display:none;"></div>
     </div>
     <div style="display:flex; gap:10px;">
+      <button class="icon-btn conn-btn" id="conn-btn" onclick="showConnectionStatus()" title="Online" aria-label="Connection status">
+        <span id="conn-icon" style="display:inline-flex;"></span>
+        <span class="conn-badge" id="conn-badge"></span>
+      </button>
       <button class="icon-btn" id="drive-btn" onclick="syncButtonClick()" title="Back up now" aria-label="Back up now">
         <!-- Barbed-wire sync loop: spins while syncing or backing up -->
         <svg class="sync-wire" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
@@ -762,7 +768,6 @@
         </svg>
       </button>
     </div>
-    <div class="sync-bar" id="sync-bar" hidden role="status" aria-live="polite"></div>
   </div>
 
   <nav class="tabs" id="tabs"></nav>
@@ -916,21 +921,30 @@ function flashSyncCheck(title){
   clearTimeout(syncCheckTimer);
   syncCheckTimer = setTimeout(()=> el.classList.remove('show'), 4000);
 }
-// The slim bar under the top bar: shown while offline, or while changes are waiting to sync.
-function refreshSyncBar(){
-  const bar = document.getElementById('sync-bar');
-  if(!bar) return;
-  const n = pendingChangeCount();
-  const changes = `${n} change${n===1?'':'s'}`;
-  let html = '';
-  if(driveEnabled() && (isOffline() || driveStatus==='offline')){
-    html = n ? `📴 Offline — ${changes} saved on this phone, waiting to sync` : `📴 Offline — keep working; changes will sync when you're back online`;
-  } else if(driveEnabled() && n && driveStatus==='error'){
-    html = `⚠ ${changes} not synced yet — will retry`;
-  }
-  bar.innerHTML = html;
-  bar.hidden = !html;
+// Connection circle next to the sync button: an intact fence when online (green ✓),
+// a broken fence when offline (red count of changes waiting on this phone).
+var FENCE_OK = '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 5v15M12 5v15M20 5v15"/><path d="M4 9h16M4 15h16"/><path d="M3 5l1-1.5L5 5M11 5l1-1.5L13 5M19 5l1-1.5L21 5"/></svg>';
+var FENCE_BROKEN = '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 5v15M20 5v15"/><path d="M3 5l1-1.5L5 5M19 5l1-1.5L21 5"/><path d="M4 9h5.5l1.2 1.4M20 9h-5l-1.6 2.2"/><path d="M4 15h4.5l1.6 2.4M20 15h-5.5l-1 1.8"/><path d="M12.2 7.5v9" stroke-dasharray="2 2.2"/></svg>';
+function connectionText(){
+  const n = pendingChangeCount(), changes = `${n} change${n===1?'':'s'}`;
+  if(isOffline() || driveStatus==='offline') return n ? `Offline — ${changes} saved on this phone, will sync when you're back online` : `Offline — keep working; changes will sync when you're back online`;
+  if(n && driveStatus==='error') return `Online, but ${changes} haven't synced yet — will retry`;
+  if(!driveEnabled()) return 'Online';
+  return n ? `Online — syncing ${changes}…` : 'Online — everything is synced';
 }
+function refreshSyncBar(){
+  const btn = document.getElementById('conn-btn'), icon = document.getElementById('conn-icon'), badge = document.getElementById('conn-badge');
+  if(!btn || !icon || !badge) return;
+  const offline = isOffline() || driveStatus==='offline';
+  const n = pendingChangeCount();
+  const stuck = offline || (n && driveStatus==='error');
+  icon.innerHTML = offline ? FENCE_BROKEN : FENCE_OK;
+  badge.className = 'conn-badge ' + (stuck ? 'waiting' : 'ok');
+  badge.textContent = stuck ? (n ? (n > 99 ? '99+' : String(n)) : '') : '✓';
+  btn.title = connectionText();
+  btn.setAttribute('aria-label', connectionText());
+}
+function showConnectionStatus(){ toast(connectionText()); }
 function onConnectionBack(){
   offlineNoticeShown = false;
   if(driveStatus==='offline') driveStatus = 'idle';
@@ -1113,7 +1127,7 @@ async function loadState(){
   }catch(e){
     if(driveEnabled()){
       driveStatus = isOffline() ? 'offline' : 'error';
-      toast(isOffline() ? "You're offline — showing the copy on this phone. Changes will sync when you're back online." : "Couldn't reach Google Drive — showing the local copy");
+      if(!isOffline()) toast("Couldn't reach Google Drive — showing the copy on this phone");
       try{
         const raw = localStorage.getItem('herd-data');
         if(raw) applyLoadedState(JSON.parse(raw));
@@ -1142,7 +1156,7 @@ function saveState(){
       if(driveEnabled()){
         if(isOffline()){
           driveStatus = 'offline';
-          if(!offlineNoticeShown){ offlineNoticeShown = true; toast("You're offline — changes are saved on this phone and will sync when you're back online"); }
+          offlineNoticeShown = true;
         } else {
           driveStatus = 'error';
           toast('Could not sync to Google Drive — saved on this phone, will retry');
