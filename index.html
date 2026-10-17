@@ -282,6 +282,8 @@
   .calf-meta{ font-size:11.5px; color:var(--ink-soft); }
   .no-calf{ font-size:12.5px; color:var(--ink-faint); font-style:italic; padding-left:16px; }
   .calf-row .btn{ flex-shrink:0; }
+  .sync-bar{ flex-basis:100%; order:10; background:#F6E7C8; color:var(--leather, #4A2C17); border:1px solid var(--brass); border-radius:var(--radius); padding:7px 12px; font-size:13px; font-weight:700; text-align:center; }
+  .sync-bar[hidden]{ display:none; }
   .pencil-btn{ display:inline-flex; align-items:center; justify-content:center; width:30px; height:30px; border-radius:50%; border:1px solid var(--line); background:var(--surface); color:var(--ink-soft); cursor:pointer; flex-shrink:0; }
   .pencil-btn:hover{ color:var(--rust); border-color:var(--rust); background:var(--white); }
   .drawer-log-btn{ display:block; width:100%; justify-content:center; text-align:center; padding:12px 16px; font-size:15px; margin:12px 0 16px; }
@@ -760,6 +762,7 @@
         </svg>
       </button>
     </div>
+    <div class="sync-bar" id="sync-bar" hidden role="status" aria-live="polite"></div>
   </div>
 
   <nav class="tabs" id="tabs"></nav>
@@ -913,12 +916,38 @@ function flashSyncCheck(title){
   clearTimeout(syncCheckTimer);
   syncCheckTimer = setTimeout(()=> el.classList.remove('show'), 4000);
 }
+// The slim bar under the top bar: shown while offline, or while changes are waiting to sync.
+function refreshSyncBar(){
+  const bar = document.getElementById('sync-bar');
+  if(!bar) return;
+  const n = pendingChangeCount();
+  const changes = `${n} change${n===1?'':'s'}`;
+  let html = '';
+  if(driveEnabled() && (isOffline() || driveStatus==='offline')){
+    html = n ? `📴 Offline — ${changes} saved on this phone, waiting to sync` : `📴 Offline — keep working; changes will sync when you're back online`;
+  } else if(driveEnabled() && n && driveStatus==='error'){
+    html = `⚠ ${changes} not synced yet — will retry`;
+  }
+  bar.innerHTML = html;
+  bar.hidden = !html;
+}
+function onConnectionBack(){
+  offlineNoticeShown = false;
+  if(driveStatus==='offline') driveStatus = 'idle';
+  refreshDriveStatusUI();
+  if(!driveEnabled() || !storageReady) return;
+  const had = pendingChangeCount();
+  driveSync().then(()=>{ if(had && !pendingChangeCount()) toast(`Back online — ${had} change${had===1?'':'s'} synced`); }).catch(()=>{ driveStatus = isOffline() ? 'offline' : 'error'; refreshDriveStatusUI(); });
+}
+window.addEventListener('online', onConnectionBack);
+window.addEventListener('offline', ()=>{ if(driveEnabled()) driveStatus = 'offline'; refreshDriveStatusUI(); });
 function refreshDriveStatusUI(){
+  refreshSyncBar();
   const dot = document.getElementById('drive-dot');
   if(!dot) return;
   dot.classList.remove('connected','error');
   if(driveEnabled()){
-    if(driveStatus==='error') dot.classList.add('error');
+    if(driveStatus==='error' || driveStatus==='offline') dot.classList.add('error');
     else dot.classList.add('connected');
   }
 }
@@ -947,6 +976,31 @@ function applyLoadedState(parsed){
    replays only this device's own adds/edits/deletes onto it, so one person's
    save never wipes out someone else's changes. */
 var syncBase = null;
+/* Offline support: the last copy that matched Google Drive is kept on the phone ('herd-sync-base').
+   Anything in the local copy that differs from it hasn't reached Drive yet, so it's merged in the
+   next time Rangebook can sync, even if the tab was closed in between. */
+var SYNC_BASE_KEY = 'herd-sync-base';
+function setSyncBase(v){
+  syncBase = v;
+  try{ if(v===null) localStorage.removeItem(SYNC_BASE_KEY); else localStorage.setItem(SYNC_BASE_KEY, v); }catch(e){}
+}
+function readStoredBase(){ try{ return localStorage.getItem(SYNC_BASE_KEY); }catch(e){ return null; } }
+// How many records (animals, events, pastures…) differ from what Drive last had.
+function pendingChangeCount(){
+  if(!driveEnabled() || syncBase===null) return 0;
+  let base; try{ base = JSON.parse(syncBase); }catch(e){ return 0; }
+  const cur = normalizeState(state);
+  let n = 0;
+  Object.keys(SYNC_KEYS).forEach(name=>{
+    const keyFn = SYNC_KEYS[name];
+    const map = list=> new Map((list||[]).map(r=>[String(keyFn(r)), JSON.stringify(r)]));
+    const b = map(base[name]), c = map(cur[name]);
+    c.forEach((v,k)=>{ if(b.get(k)!==v) n++; });
+    b.forEach((v,k)=>{ if(!c.has(k)) n++; });
+  });
+  return n;
+}
+function isOffline(){ return typeof navigator!=='undefined' && navigator.onLine===false; }
 var SYNC_KEYS = {
   animals: r=>r.id, events: r=>r.id, breeding: r=>r.id, pastures: r=>r.id,
   breeds: r=>String(r.name||'').toLowerCase(), vaccines: r=>String(r).toLowerCase(),
@@ -999,7 +1053,7 @@ function driveSync(){
           }
         }
         mergedJson = keepLocalOnlyData(mergedJson, JSON.parse(before));
-        syncBase = mergedJson;
+        setSyncBase(mergedJson);
         const merged = JSON.parse(mergedJson);
         if(JSON.stringify(normalizeState(state)) === before){
           if(mergedJson !== before){ applyLoadedState(merged); render(); }
@@ -1023,7 +1077,7 @@ function driveSync(){
 }
 function pullFromDrive(){
   if(!storageReady || !driveEnabled() || document.hidden) return;
-  driveSync().catch(()=>{ driveStatus = 'error'; refreshDriveStatusUI(); });
+  driveSync().catch(()=>{ driveStatus = isOffline() ? 'offline' : 'error'; refreshDriveStatusUI(); });
 }
 setInterval(pullFromDrive, 30000);
 document.addEventListener('visibilitychange', pullFromDrive);
@@ -1034,10 +1088,21 @@ async function loadState(){
       await driveCheckVersion();
       let local = {};
       try{ local = normalizeState(JSON.parse(localStorage.getItem('herd-data')||'{}')); }catch(e){}
-      const parsed = JSON.parse(keepLocalOnlyData(JSON.stringify(normalizeState(await driveFetchState())), local));
+      const remote = normalizeState(await driveFetchState());
+      let parsed = JSON.parse(keepLocalOnlyData(JSON.stringify(remote), local));
+      // Changes made on this phone that never reached Drive (e.g. entered offline, then the tab closed):
+      // replay them onto Drive's current copy, then push them up.
+      const storedBase = readStoredBase();
+      const localJson = JSON.stringify(local);
+      const hasLocal = Object.keys(SYNC_KEYS).some(k=> (local[k]||[]).length);
+      let pending = false;
+      if(storedBase && hasLocal && localJson !== storedBase){
+        try{ parsed = mergeStates(JSON.parse(storedBase), local, parsed); pending = true; }catch(e){}
+      }
       driveStatus = 'connected';
       applyLoadedState(parsed);
-      syncBase = JSON.stringify(parsed);
+      setSyncBase(pending ? JSON.stringify(remote) : JSON.stringify(parsed));
+      if(pending) setTimeout(()=>{ driveSync().then(()=>{ if(!pendingChangeCount()) toast('Changes made offline are now synced'); }).catch(()=>{}); }, 0);
     } else if(hasAppStorage){
       const res = await window.storage.get('herd-data', false);
       if(res && res.value) applyLoadedState(JSON.parse(res.value));
@@ -1047,18 +1112,20 @@ async function loadState(){
     }
   }catch(e){
     if(driveEnabled()){
-      driveStatus = 'error';
-      toast("Couldn't reach Google Drive — showing the local copy");
+      driveStatus = isOffline() ? 'offline' : 'error';
+      toast(isOffline() ? "You're offline — showing the copy on this phone. Changes will sync when you're back online." : "Couldn't reach Google Drive — showing the local copy");
       try{
         const raw = localStorage.getItem('herd-data');
         if(raw) applyLoadedState(JSON.parse(raw));
       }catch(e2){}
+      // Keep merging against what Drive last had, not against nothing.
+      syncBase = readStoredBase();
     }
   }
   storageReady = true;
   refreshDriveStatusUI();
 }
-var saveTimer = null;
+var saveTimer = null, offlineNoticeShown = false;
 function saveState(){
   if(promoteHeifersWithCalves().length) render();
   clearTimeout(saveTimer);
@@ -1073,8 +1140,13 @@ function saveState(){
       }
     }catch(e){
       if(driveEnabled()){
-        driveStatus = 'error';
-        toast('Could not sync to Google Drive — saved locally, will retry next change');
+        if(isOffline()){
+          driveStatus = 'offline';
+          if(!offlineNoticeShown){ offlineNoticeShown = true; toast("You're offline — changes are saved on this phone and will sync when you're back online"); }
+        } else {
+          driveStatus = 'error';
+          toast('Could not sync to Google Drive — saved on this phone, will retry');
+        }
       } else {
         toast('Could not save — changes may be lost');
       }
@@ -1966,7 +2038,7 @@ function viewDashboard(){
 
     <div class="panel" id="upcoming-panel">
       <h2>Upcoming &amp; Overdue <button class="btn ghost sm" onclick="setTab('health')">Log an event</button></h2>
-      <p class="sub">Scheduled events, follow-ups, weaning windows and expected calvings. Click one to see the animals.</p>
+      <p class="sub">Scheduled events, follow-ups and expected calvings. Click one to see the animals.</p>
       ${tasks.length===0 ? `<div class="empty-state"><div class="icon">📋</div><h3>Nothing on the books</h3><p>Add reproduction, health, or calf records to see reminders here.</p></div>` :
       `<div class="task-list">
         ${tasks.map((t, idx)=>{
@@ -3546,7 +3618,7 @@ async function connectDrive(cfg){
       await driveSaveState();
       driveLastSync = new Date();
     }
-    syncBase = JSON.stringify(normalizeState(state));
+    setSyncBase(JSON.stringify(normalizeState(state)));
     try{ localStorage.removeItem('herd-drive-pending-secret'); }catch(e){}
     return true;
   }catch(e){
@@ -3593,7 +3665,7 @@ async function connectFromLinkIfPresent(){
 }
 function disconnectDrive(){
   persistDriveConfig({ url:'', secret:'' });
-  syncBase = null;
+  setSyncBase(null);
   driveStatus = 'idle';
   refreshDriveStatusUI();
   openDriveModal();
