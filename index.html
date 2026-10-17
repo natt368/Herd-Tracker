@@ -282,6 +282,9 @@
   .calf-meta{ font-size:11.5px; color:var(--ink-soft); }
   .no-calf{ font-size:12.5px; color:var(--ink-faint); font-style:italic; padding-left:16px; }
   .calf-row .btn{ flex-shrink:0; }
+  .pencil-btn{ display:inline-flex; align-items:center; justify-content:center; width:30px; height:30px; border-radius:50%; border:1px solid var(--line); background:var(--surface); color:var(--ink-soft); cursor:pointer; flex-shrink:0; }
+  .pencil-btn:hover{ color:var(--rust); border-color:var(--rust); background:var(--white); }
+  .drawer-log-btn{ display:block; width:100%; justify-content:center; text-align:center; padding:12px 16px; font-size:15px; margin:12px 0 16px; }
   .type-chips{ display:flex; flex-wrap:wrap; gap:6px; }
   .type-chip{ display:inline-flex; align-items:center; gap:6px; padding:6px 11px; border:1px solid var(--line); border-radius:16px; background:var(--white); font-size:12.5px; font-weight:600; cursor:pointer; user-select:none; text-transform:none; letter-spacing:0; }
   .type-chip input{ margin:0; }
@@ -781,7 +784,8 @@ var storageReady = false;
 var CLASSES = ['Cow','Bull','Heifer','Steer','Bull Calf','Heifer Calf','Steer Calf'];
 // Treatment procedures offered when Treatment is one of the event types.
 var TREATMENT_OPTIONS = ['Branding','Castrating','Dehorning','Deworming','Delousing / pour-on','Implanting','Hoof trimming','Antibiotics','Pinkeye treatment','Foot rot treatment'];
-var EVENT_TYPES = ['Vaccination','Treatment','Weight Check','Calving','Weaning','Pregnancy Check','Death / Loss','Sale','Purchase','Other'];
+var EVENT_TYPES = ['Vaccination','Treatment','Weight Check','Calving','Weaning','Pregnancy Check','Pasture move','Status change','Death / Loss','Sale','Purchase','Other'];
+var STATUS_OPTIONS = [['active','Active'],['active-preg','Active – Preg'],['sold','Sold'],['deceased','Deceased']];
 var BREED_PALETTE = ['#A8481F','#4C6B3A','#C97A2B','#8A7A46','#6E6249','#37501F','#7E3517','#965A1B','#5B4636','#3C6E71','#7A4B8A','#B23A2E'];
 var GESTATION_DAYS = 283;
 /* A cow is paired from calving until her calf is weaned. Weaning is only ever recorded by hand
@@ -2659,7 +2663,7 @@ function deleteGeneralEvent(id){
   render();
   toast('Event deleted');
 }
-function eventDetail(ev){ return ev.vaccine || ev.treatment || ev.pregResult || ''; }
+function eventDetail(ev){ return ev.vaccine || ev.treatment || ev.pregResult || ev.detail || ''; }
 var eventGroupCache = [];
 function openEventGroup(idx){
   const g = eventGroupCache[idx];
@@ -3825,17 +3829,14 @@ function openAnimalModal(presetKlass, editId){
           <p class="hint">Breeds are added in Settings ⚙ → Breeds.</p>
         </div>
       </div>
-      <div class="field-row three">
+      <div class="field-row ${editing ? '' : 'three'}">
         <div class="field"><label>Date of birth</label><input type="date" name="dob" value="${a.dob||''}" onchange="syncYearLetterFromDob(this)"><p class="hint" id="dob-letter-note"></p></div>
         <div class="field"><label>Year letter <span id="year-letter-swatch" title="Tag colour for this year letter" style="display:inline-block; width:10px; height:10px; border-radius:50%; vertical-align:middle; margin-left:4px; border:1px solid rgba(0,0,0,0.2); background:${tagColorForLetter(a.yearLetter)||'transparent'};"></span></label><input type="text" name="yearLetter" maxlength="2" oninput="const sw=document.getElementById('year-letter-swatch'); if(sw) sw.style.background = tagColorForLetter(this.value)||'transparent'; const h=document.getElementById('year-letter-hint'); if(h) h.textContent = yearLetterHint(this.value);" value="${escapeHtml(a.yearLetter)}" placeholder="e.g. N" style="text-transform:uppercase;"><p class="hint" id="year-letter-hint">${escapeHtml(yearLetterHint(a.yearLetter))}</p></div>
-        <div class="field"><label>Status</label>
+        ${editing ? '' : `<div class="field"><label>Status</label>
           <select name="status" id="animal-status-select" onchange="toggleSalePriceField()">
-            <option value="active" ${a.status==="active"?'selected':''}>Active</option>
-            <option value="active-preg" ${a.status==='active-preg'?'selected':''}>Active – Preg</option>
-            <option value="sold" ${a.status==='sold'?'selected':''}>Sold</option>
-            <option value="deceased" ${a.status==='deceased'?'selected':''}>Deceased</option>
+            ${STATUS_OPTIONS.map(([v,l])=>`<option value="${v}" ${a.status===v?'selected':''}>${l}</option>`).join('')}
           </select>
-        </div>
+        </div>`}
       </div>
       <div id="bull-fields" class="field" style="display:${a.klass==='Bull'?'block':'none'}; background:var(--surface-2); padding:12px 14px; border-radius:var(--radius);">
         <label style="margin-bottom:10px;">Breeding soundness (bulls)</label>
@@ -3858,15 +3859,18 @@ function openAnimalModal(presetKlass, editId){
           <div class="field" style="margin-bottom:0;"><label>Purchase date</label><input type="date" name="purchaseDate" value="${a.purchaseDate||''}"></div>
         </div>
       </div>
-      <div id="sale-price-field" class="field" style="display:${a.status==='sold'?'block':'none'};">
+      ${editing ? '' : `<div id="sale-price-field" class="field" style="display:${a.status==='sold'?'block':'none'};">
         <label>Sale price</label>
         <input type="number" name="salePrice" min="0" step="0.01" value="${escapeHtml(a.salePrice)}" placeholder="e.g. 1450">
-      </div>
+      </div>`}
       <div class="field-row">
         <div class="field"><label>Dam (if calf)</label><select name="damId">${damOptionsHtml(a.damId, a.tagId)}</select></div>
         <div class="field"><label>Sire</label><input type="text" name="sireId" list="sire-options" value="${escapeHtml(nameForTag(a.sireId)==='—' ? '' : nameForTag(a.sireId))}" placeholder="Bull's name, or 'AI'"><datalist id="sire-options">${state.animals.filter(x=>x.klass==='Bull').sort(byName).map(x=>`<option value="${escapeHtml(displayName(x))}">`).join('')}</datalist></div>
       </div>
-      <div class="field"><label>Pasture / location</label><select name="pasture" id="animal-pasture-select">${pastureSelectOptionsHtml(a.pasture)}</select><p class="hint">Pastures are added in Settings ⚙ → Pastures.</p></div>
+      ${editing ? `<div class="field" style="background:var(--surface-2); padding:10px 12px; border-radius:var(--radius); display:flex; align-items:center; gap:10px; flex-wrap:wrap;">
+        <span style="flex:1; min-width:180px; font-size:13px;"><b>${statusLabel(a.status)}</b> · ${a.pasture ? '📍 '+escapeHtml(a.pasture) : 'No pasture'}<br><span class="hint" style="margin:0;">Status and pasture change with <b>Log event</b> (Status change, Pasture move, Sale…).</span></span>
+        <button type="button" class="btn ghost sm" onclick="closeModal(); openEventModal('${a.id}')">Log event</button>
+      </div>` : `<div class="field"><label>Pasture / location</label><select name="pasture" id="animal-pasture-select">${pastureSelectOptionsHtml(a.pasture)}</select><p class="hint">Pastures are added in Settings ⚙ → Pastures.</p></div>`}
       <div class="field"><label>Notes</label><textarea name="notes" placeholder="Temperament, markings, anything worth remembering">${escapeHtml(a.notes)}</textarea></div>
       <div class="modal-actions">
         ${editing? `<button type="button" class="btn danger" style="margin-right:auto;" onclick="deleteAnimal('${a.id}')">Delete</button>`:''}
@@ -3918,6 +3922,8 @@ function toggleSalePriceField(){
 function saveAnimal(evt, id, editing){
   evt.preventDefault();
   const f = evt.target;
+  // When editing, status, pasture and sale price are kept as they are (they change through Log event).
+  const existing = editing ? (animalById(id) || {}) : {};
   const rec = {
     id,
     tagId: f.tagId.value.trim(),
@@ -3926,12 +3932,12 @@ function saveAnimal(evt, id, editing){
     breed: f.breed.value.trim(),
     dob: f.dob.value,
     yearLetter: f.yearLetter.value.trim().toUpperCase() || letterForDate(f.dob.value),
-    status: f.status.value,
+    status: editing ? (existing.status || 'active') : f.status.value,
     damId: f.damId.value.trim(),
     sireId: sireRefFromInput(f.sireId.value),
-    pasture: f.pasture.value.trim(),
+    pasture: editing ? (existing.pasture || '') : f.pasture.value.trim(),
     notes: f.notes.value.trim(),
-    salePrice: f.status.value==='sold' && f.salePrice.value ? Number(f.salePrice.value) : '',
+    salePrice: editing ? (existing.salePrice ?? '') : (f.status.value==='sold' && f.salePrice.value ? Number(f.salePrice.value) : ''),
     photo: animalFormPhoto,
   };
   // Breeding soundness only applies to bulls.
@@ -4362,6 +4368,23 @@ function openEventModal(presetAnimalId, presetGroupIds){
         <p class="hint">Tick one or more. Each type is saved as its own record.</p>
       </div>
       <div class="field"><label>Date *</label><input type="date" name="date" required value="${todayStr()}"></div>
+      <div id="pasture-move-field" style="display:none;" class="field">
+        <label>Move to pasture *</label>
+        <select name="movePasture">
+          <option value="">— Choose a pasture —</option>
+          ${[...new Set([...state.pastures.map(p=>p.name), ...Object.keys(getPastureGroups())])].sort((x,y)=>x.localeCompare(y, undefined, { numeric:true })).map(n=>`<option value="${escapeHtml(n)}">${escapeHtml(n)}</option>`).join('')}
+          <option value="__none__">No pasture (unassigned)</option>
+        </select>
+        <p class="hint">Recorded in the history; undo from Settings ⚙ → Pastures → Recent moves.</p>
+      </div>
+      <div id="status-change-field" style="display:none;" class="field">
+        <label>New status *</label>
+        <select name="newStatus" onchange="toggleEventSalePrice()">${STATUS_OPTIONS.map(([v,l])=>`<option value="${v}">${l}</option>`).join('')}</select>
+      </div>
+      <div id="event-sale-price-field" style="display:none;" class="field">
+        <label>Sale price ($)</label>
+        <input type="number" name="eventSalePrice" min="0" step="0.01" placeholder="e.g. 1450">
+      </div>
       <div id="treatment-field" style="display:none;" class="field">
         <label>Treatments</label>
         <div class="checkbox-list" style="max-height:none;">${TREATMENT_OPTIONS.map(t=>`<label class="checkbox-row"><input type="checkbox" name="treatmentOpts" value="${t}"> ${t}</label>`).join('')}</div>
@@ -4423,7 +4446,7 @@ function setEventMode(mode){
   show('next-due-field', !general);
   const titleInput = document.getElementById('general-title-input');
   if(titleInput) titleInput.required = general;
-  if(general){ ['vaccine-field','preg-field','calving-fields','treatment-field'].forEach(id=>show(id, false)); }
+  if(general){ ['vaccine-field','preg-field','calving-fields','treatment-field','pasture-move-field','status-change-field','event-sale-price-field'].forEach(id=>show(id, false)); }
   else onEventTypesChange();
   const indivBlock = document.getElementById('individual-animal-block');
   const groupBlock = document.getElementById('group-animal-block');
@@ -4451,7 +4474,16 @@ function setEventTypes(types){
 }
 function onEventTypesChange(){
   toggleCalvingFields(); toggleVaccineField(); togglePregField(); toggleTreatmentField();
+  const show = (id, on)=>{ const el = document.getElementById(id); if(el) el.style.display = on ? 'block' : 'none'; };
+  show('pasture-move-field', hasEventType('Pasture move'));
+  show('status-change-field', hasEventType('Status change'));
+  toggleEventSalePrice();
   enforceGroupCalvingRestriction();
+}
+function toggleEventSalePrice(){
+  const box = document.getElementById('event-sale-price-field');
+  const st = document.querySelector('select[name="newStatus"]');
+  if(box) box.style.display = (hasEventType('Sale') || (hasEventType('Status change') && st && st.value==='sold')) ? 'block' : 'none';
 }
 function toggleTreatmentField(){
   const box = document.getElementById('treatment-field');
@@ -4491,11 +4523,17 @@ function applyCastration(a){
   return false;
 }
 // What logging one event type does to the animal (status, weaning, castration).
-function applyEventEffects(a, type, date, treatments){
+function applyEventEffects(a, type, date, treatments, extra){
   if(!a) return false;
+  extra = extra || {};
   if(type==='Weaning') applyWeaning(a, date);
   if(type==='Death / Loss') a.status = 'deceased';
-  if(type==='Sale') a.status = 'sold';
+  if(type==='Sale'){ a.status = 'sold'; if(extra.salePrice!=='' && extra.salePrice!==undefined) a.salePrice = extra.salePrice; }
+  if(type==='Pasture move' && extra.pasture!==undefined) a.pasture = extra.pasture;
+  if(type==='Status change' && extra.status){
+    a.status = extra.status;
+    if(extra.status==='sold' && extra.salePrice!=='' && extra.salePrice!==undefined) a.salePrice = extra.salePrice;
+  }
   if(type==='Treatment' && (treatments||[]).includes('Castrating')) return applyCastration(a);
   return false;
 }
@@ -4531,6 +4569,18 @@ function saveEvent(evt){
     ...(type==='Pregnancy Check' ? { pregResult } : {}),
   });
   let castrated = 0;
+  // Pasture move / Status change / sale price
+  const movePasture = types.includes('Pasture move') ? f.movePasture.value : '';
+  if(types.includes('Pasture move') && !movePasture){ toast('Choose the pasture to move to'); return; }
+  const toPasture = movePasture==='__none__' ? '' : movePasture;
+  const newStatus = types.includes('Status change') ? f.newStatus.value : '';
+  const salePrice = f.eventSalePrice && f.eventSalePrice.value!=='' ? Number(f.eventSalePrice.value) : '';
+  const extra = { pasture: toPasture, status: newStatus, salePrice };
+  const extraDetails = type => ({
+    ...(type==='Pasture move' ? { toPasture, detail: 'to ' + (toPasture || 'no pasture') } : {}),
+    ...(type==='Status change' ? { newStatus, detail: statusLabel(newStatus) + (newStatus==='sold' && salePrice!=='' ? ' · $' + Number(salePrice).toLocaleString() : '') } : {}),
+    ...(type==='Sale' && salePrice!=='' ? { salePrice, detail: '$' + Number(salePrice).toLocaleString() } : {}),
+  });
 
   if(mode==='group'){
     if(types.includes('Calving')){ toast('Calving must be logged for one animal at a time'); return; }
@@ -4538,14 +4588,15 @@ function saveEvent(evt){
     if(checked.length===0){ toast('Select at least one animal'); return; }
     const groupPastures = [...new Set(checked.map(id=> ((animalById(id)||{}).pasture||'').trim()))];
     const groupLabel = groupPastures.length===1 ? groupPastures[0] : '';
+    if(types.includes('Pasture move')) recordMove(toPasture, checked);
     types.forEach(type=>{
       // One group id per type ties the records together so the log shows each as one group event.
       const groupId = uid();
       checked.forEach(animalId=>{
         const a = animalById(animalId);
-        state.events.push({ id: uid(), animalId, type, date, notes, nextDue, ...detailsFor(type), groupId, groupLabel });
+        state.events.push({ id: uid(), animalId, type, date, notes, nextDue, ...detailsFor(type), ...extraDetails(type), groupId, groupLabel });
         if(type==='Pregnancy Check') applyPregResult(a, pregResult);
-        if(applyEventEffects(a, type, date, treatments)) castrated++;
+        if(applyEventEffects(a, type, date, treatments, extra)) castrated++;
       });
     });
     saveState();
@@ -4563,10 +4614,11 @@ function saveEvent(evt){
   }
   const animalId = f.animalId.value;
   const a = animalById(animalId);
+  if(types.includes('Pasture move')) recordMove(toPasture, [animalId]);
   types.forEach(type=>{
-    state.events.push({ id: uid(), animalId, type, date, notes, nextDue, ...detailsFor(type), individual: true });
+    state.events.push({ id: uid(), animalId, type, date, notes, nextDue, ...detailsFor(type), ...extraDetails(type), individual: true });
     if(type==='Pregnancy Check') applyPregResult(a, pregResult);
-    if(applyEventEffects(a, type, date, treatments)) castrated++;
+    if(applyEventEffects(a, type, date, treatments, extra)) castrated++;
   });
 
   const weight = f.weight.value;
@@ -4805,8 +4857,14 @@ function openDrawer(id){
         <button class="modal-close" onclick="closeDrawer()">✕</button>
       </div>
       ${a.photo ? `<img src="${a.photo}" alt="${escapeHtml(displayName(a))}" class="animal-photo" style="margin-bottom:14px;">` : ''}
-      <div class="drawer-title">${escapeHtml(displayName(a))}</div>
+      <div style="display:flex; align-items:center; gap:8px;">
+        <div class="drawer-title" style="margin:0;">${escapeHtml(displayName(a))}</div>
+        <button class="pencil-btn" title="Edit animal details" aria-label="Edit animal details" onclick="closeDrawer(); openAnimalModal(null,'${a.id}')">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 20h9"></path><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"></path></svg>
+        </button>
+      </div>
       <div class="drawer-sub">${classLabel(a)} · ${a.breed? breedBadge(a.breed) : 'Breed unrecorded'} · ${statusLabel(a.status)}</div>
+      <button class="btn rust drawer-log-btn" onclick="closeDrawer(); openEventModal('${a.id}')">+ Log event</button>
 
       <div class="kv-grid">
         <div class="kv"><div class="k">Date of birth</div><div class="v">${fmtDate(a.dob)}</div></div>
@@ -4824,10 +4882,6 @@ function openDrawer(id){
       </div>
       ${a.notes? `<div class="kv"><div class="k">Notes</div><div class="v" style="font-weight:400;">${escapeHtml(a.notes)}</div></div>`:''}
 
-      <div class="modal-actions" style="justify-content:flex-start; margin-top:16px;">
-        <button class="btn ghost sm" onclick="closeDrawer(); openAnimalModal(null,'${a.id}')">Edit</button>
-        <button class="btn ghost sm" onclick="closeDrawer(); openEventModal('${a.id}')">+ Log event</button>
-      </div>
 
       ${calves.length>0 ? `<div class="drawer-section">
         <h4>Offspring on record</h4>
@@ -4843,7 +4897,7 @@ function openDrawer(id){
       <div class="drawer-section">
         <h4>Event history</h4>
         ${events.length===0? `<p class="hint">No events logged yet.</p>` :
-          events.map(e=>`<div class="mini-row"><span class="t">${escapeHtml(e.type)}${e.vaccine? ' — '+escapeHtml(e.vaccine):''}${e.treatment? ' — '+escapeHtml(e.treatment):''}${e.pregResult? ' — '+escapeHtml(e.pregResult):''}${e.notes? ' — '+escapeHtml(e.notes):''}</span><span class="d">${fmtDate(e.date)}</span></div>`).join('')}
+          events.map(e=>`<div class="mini-row"><span class="t">${escapeHtml(e.type)}${e.vaccine? ' — '+escapeHtml(e.vaccine):''}${e.treatment? ' — '+escapeHtml(e.treatment):''}${e.detail? ' — '+escapeHtml(e.detail):''}${e.pregResult? ' — '+escapeHtml(e.pregResult):''}${e.notes? ' — '+escapeHtml(e.notes):''}</span><span class="d">${fmtDate(e.date)}</span></div>`).join('')}
       </div>
     </div>
   </div>`;
