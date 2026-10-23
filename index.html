@@ -1261,6 +1261,7 @@ function displayName(a){
   if(!a) return 'Unknown';
   const n = String(a.name||'').trim();
   if(n) return n;
+  if(String(a.visualTag||'').trim()) return String(a.visualTag).trim();
   return a.id ? 'Unnamed ' + classLabel(a).toLowerCase() : 'Not in herd';
 }
 // Name for an RFID reference (dam, sire, breeding record); free text such as "AI" is shown as typed.
@@ -1522,7 +1523,7 @@ function removeVaccineByIndex(idx){
 
 function animalMatchesSearch(a, q){
   const s = String(q||'').trim().toLowerCase();
-  return [a.tagId, a.name, a.breed, classLabel(a)].some(v=> String(v||'').toLowerCase().includes(s));
+  return [a.tagId, a.name, a.visualTag, a.breed, classLabel(a)].some(v=> String(v||'').toLowerCase().includes(s));
 }
 function getFilteredAnimals(){
   let list = state.animals.filter(a=>{
@@ -2177,7 +2178,7 @@ function viewAnimals(){
               <td>${breedBadge(a.breed)}</td>
               <td class="num-cell">${fmtDate(a.dob)}</td>
               <td class="num-cell">${ageText(a)}</td>
-              <td>${a.damId ? (animalByTag(a.damId) ? eartag(animalByTag(a.damId)) : '<span class="muted">Not in herd</span>') : '<span class="muted">—</span>'}</td>
+              <td>${a.damId ? (animalByTag(a.damId) ? eartag(animalByTag(a.damId)) : `<span class="muted" title="No animal in the herd matches “${escapeHtml(a.damId)}”">Not in herd (${escapeHtml(a.damId)})</span>`) : '<span class="muted">—</span>'}</td>
               <td>${escapeHtml(a.pasture)||'<span class="muted">—</span>'}</td>
               <td class="num-cell">${w? w.lbs+' lb' : '<span class="muted">—</span>'}</td>
               ${animalFilters.status==='sold' ? `<td class="num-cell">${a.salePrice!==undefined && a.salePrice!==''? '$'+Number(a.salePrice).toLocaleString() : '<span class="muted">—</span>'}</td>` : ''}
@@ -4109,16 +4110,29 @@ function normalizeHeader(h){ return String(h||'').trim().toLowerCase().replace(/
 var PARENT_SUFFIX = '(tag|id|rfid|eid|no|num|number|name|visual|vid|tagid|tagno|tagnum|tagnumber|visualid|eartag|eartagno|rfidtag|eidtag)?';
 var DAM_HEADER = new RegExp('^(dam|mother|mom|mum)s?' + PARENT_SUFFIX + '$');
 var SIRE_HEADER = new RegExp('^(sire|father)s?' + PARENT_SUFFIX + '$');
+// Visual / management / dangle tag columns ("Visual Tag", "VID", "Tag Visual", "Dangle Tag"…).
+var VISUAL_HEADER = /^(visual|vid$|vtag|dangle|panel|management|mgmt|tagvisual)/;
 // Which Rangebook field a spreadsheet column fills. A "Cow" / "Cow ID" / "Cow Tag" column next to a real
 // RFID column is the mother (as on heifer and calf sheets), not the animal's own ID.
 function importFieldFor(header, allHeaders){
   const n = normalizeHeader(header);
   if(DAM_HEADER.test(n)) return 'damId';
   if(SIRE_HEADER.test(n)) return 'sireId';
+  const isIdCol = o=>{ const on = normalizeHeader(o); return IMPORT_HEADER_MAP[on]==='tagId' && !/^cow/.test(on) && !VISUAL_HEADER.test(on); };
+  // A visual tag column is the visual tag when the sheet has another ID column, otherwise it's the ID.
+  if(VISUAL_HEADER.test(n)) return (allHeaders||[]).some(o=> o!==header && isIdCol(o)) ? 'visualTag' : 'tagId';
   const key = IMPORT_HEADER_MAP[n];
-  if(key==='tagId' && /^cow/.test(n)){
-    const realTag = (allHeaders||[]).some(o=>{ const on = normalizeHeader(o); return o!==header && !/^cow/.test(on) && IMPORT_HEADER_MAP[on]==='tagId'; });
-    if(realTag) return 'damId';
+  if(key==='tagId'){
+    const idCols = (allHeaders||[]).filter(o=> IMPORT_HEADER_MAP[normalizeHeader(o)]==='tagId');
+    if(idCols.length > 1){
+      // "Cow" / "Cow ID" / "Cow Tag" next to the animal's own ID column is the mother.
+      if(/^cow/.test(n) && idCols.some(o=> !/^cow/.test(normalizeHeader(o)))) return 'damId';
+      // Of several ID columns the first stays the RFID (as it always has, so re-imports match the same
+      // animals); the others (Tag #, Visual ID, VID…) are kept as the visual tag instead of being dropped.
+      const own = idCols.filter(o=> !/^cow/.test(normalizeHeader(o)));
+      const primary = own[0];
+      if(header !== primary) return 'visualTag';
+    }
   }
   return key;
 }
@@ -4286,6 +4300,7 @@ function processImportRows(rows){
       dob: parseDateFlexible(rec.dob),
       yearLetter: String(rec.yearLetter||'').trim().toUpperCase() || letterForDate(parseDateFlexible(rec.dob)),
       damId: String(rec.damId||'').trim(),
+      visualTag: String(rec.visualTag||'').trim(),
       sireId: String(rec.sireId||'').trim(),
       scrotalCm: rec.scrotalCm!==undefined && !isNaN(parseFloat(rec.scrotalCm)) ? parseFloat(rec.scrotalCm) : '',
       semenCheck: normalizeSemenCheck(rec.semenCheck),
@@ -4362,7 +4377,7 @@ function renderImportPreview(){
 }
 
 // Spreadsheet column -> animal field, for overwriting an existing animal with only the cells that were filled in.
-var IMPORT_OVERWRITE_FIELDS = ['name','klass','breed','dob','yearLetter','damId','sireId','status','pasture','notes','scrotalCm','semenCheck','semenCheckDate','purchasePrice','purchasedFrom','purchaseDate'];
+var IMPORT_OVERWRITE_FIELDS = ['name','visualTag','klass','breed','dob','yearLetter','damId','sireId','status','pasture','notes','scrotalCm','semenCheck','semenCheckDate','purchasePrice','purchasedFrom','purchaseDate'];
 // Dam/Sire cells may hold a name instead of an RFID; link them to that animal's RFID when the name is unique.
 /* Dam / Sire values from a spreadsheet or typed by hand can be an RFID or a name, written a little
    differently from the herd record ("48 H" vs "48H", "102.0", spaces in an RFID). Find the one animal
@@ -4370,7 +4385,9 @@ var IMPORT_OVERWRITE_FIELDS = ['name','klass','breed','dob','yearLetter','damId'
 function normRef(v){
   let t = String(v||'').trim().toLowerCase();
   if(/^\d+\.0+$/.test(t)) t = t.replace(/\.0+$/, '');
-  return t.replace(/[\s\-_]+/g, '');
+  t = t.replace(/[\s\-_#]+/g, '');
+  // "048" and "48", "048h" and "48h" are the same tag
+  return t.replace(/^0+(?=\d)/, '');
 }
 function resolveParentRef(value, want){
   const raw = String(value||'').trim();
@@ -4388,12 +4405,20 @@ function resolveParentRef(value, want){
     const live = l.filter(isActive); if(live.length) l = live;
     return l.length===1 ? l[0] : null;
   };
-  return pick(state.animals.filter(x=> normRef(x.tagId)===key)) || pick(state.animals.filter(x=> normRef(x.name)===key));
+  const byField = f=> pick(state.animals.filter(x=> x[f] && normRef(x[f])===key));
+  const found = byField('tagId') || byField('name') || byField('visualTag');
+  if(found) return found;
+  // Just the tag number ("48") for a cow tagged "48H" or "H48": only when exactly one animal fits.
+  if(/^\d+$/.test(key)){
+    const re = new RegExp('^(' + key + '[a-z]|[a-z]' + key + ')$');
+    return pick(state.animals.filter(x=> re.test(normRef(x.name)) || (x.visualTag && re.test(normRef(x.visualTag)))));
+  }
+  return null;
 }
 // Point Dam / Sire at the matching animal's RFID. Only links when exactly one animal matches. Returns how many were linked.
 // Earlier imports kept unrecognised columns in Notes as "Heading: value". Move Dam / Sire ones back.
 function parentsFromNotes(a){
-  if(!a.notes || (a.damId && a.sireId)) return false;
+  if(!a.notes || (a.damId && a.sireId && a.visualTag)) return false;
   let changed = false;
   const kept = String(a.notes).split('; ').filter(seg=>{
     const m = /^([^:]{1,40}):\s*(.+)$/.exec(seg);
@@ -4401,6 +4426,7 @@ function parentsFromNotes(a){
     const n = normalizeHeader(m[1]);
     if(!a.damId && DAM_HEADER.test(n)){ a.damId = m[2].trim(); changed = true; return false; }
     if(!a.sireId && SIRE_HEADER.test(n)){ a.sireId = m[2].trim(); changed = true; return false; }
+    if(!a.visualTag && VISUAL_HEADER.test(n)){ a.visualTag = m[2].trim(); changed = true; return false; }
     return true;
   });
   if(changed) a.notes = kept.join('; ');
@@ -4449,6 +4475,7 @@ function confirmImport(){
     state.animals.push({
       id: uid(), tagId: r.tagId, name: r.name, klass: r.klass, breed: r.breed, dob: r.dob, yearLetter: r.yearLetter,
       damId: r.damId, sireId: r.sireId, status: r.status, pasture: r.pasture, notes: r.notes,
+      ...(r.visualTag ? { visualTag: r.visualTag } : {}),
       scrotalCm: r.scrotalCm, semenCheck: r.semenCheck, semenCheckDate: r.semenCheckDate,
       purchasePrice: r.purchasePrice, purchasedFrom: r.purchasedFrom, purchaseDate: r.purchaseDate,
       weights, weanDate: null
@@ -4465,6 +4492,12 @@ function confirmImport(){
   if(dups.length && !updates.length) parts.push(`skipped ${dups.length} already in herd`);
   const msg = parts.join(', ');
   toast(msg.charAt(0).toUpperCase() + msg.slice(1));
+  const tags = new Set([...fresh, ...updates].map(r=>r.tagId));
+  const unmatched = state.animals.filter(a=> tags.has(a.tagId) && a.damId && !animalByTag(a.damId));
+  if(unmatched.length){
+    const eg = [...new Set(unmatched.map(a=>a.damId))].slice(0,3).map(v=>`“${v}”`).join(', ');
+    setTimeout(()=> toast(`${unmatched.length} dam${unmatched.length===1?'':'s'} didn't match any animal in the herd (e.g. ${eg}). They show as “Not in herd (…)”.`), 900);
+  }
 }
 
 function downloadImportTemplate(){
@@ -5040,7 +5073,8 @@ function openDrawer(id){
         <div class="kv"><div class="k">Date of birth</div><div class="v">${fmtDate(a.dob)}</div></div>
         <div class="kv"><div class="k">Age</div><div class="v">${ageText(a)}${yearFromLetter(a.yearLetter) ? ' <span class="muted" style="font-weight:500;">('+yearFromLetter(a.yearLetter)+')</span>' : ''}</div></div>
         <div class="kv"><div class="k">Year letter</div><div class="v">${escapeHtml(a.yearLetter)||'—'}</div></div>
-        <div class="kv"><div class="k">Dam</div><div class="v">${dam? escapeHtml(displayName(dam)) : (a.damId ? 'Not in herd' : '—')}</div></div>
+        ${a.visualTag ? `<div class="kv"><div class="k">Visual tag</div><div class="v">${escapeHtml(a.visualTag)}</div></div>` : ''}
+        <div class="kv"><div class="k">Dam</div><div class="v">${dam? escapeHtml(displayName(dam)) : (a.damId ? 'Not in herd <span class="muted" style="font-weight:500;">('+escapeHtml(a.damId)+')</span>' : '—')}</div></div>
         <div class="kv"><div class="k">Sire</div><div class="v">${escapeHtml(nameForTag(a.sireId))}</div></div>
         <div class="kv"><div class="k">Pasture</div><div class="v">${escapeHtml(a.pasture)||'—'}</div></div>
         ${a.klass==='Bull' ? `<div class="kv"><div class="k">Scrotal circ.</div><div class="v">${a.scrotalCm!==undefined && a.scrotalCm!=='' ? escapeHtml(a.scrotalCm)+' cm' : '—'}</div></div>
