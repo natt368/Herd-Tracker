@@ -4104,6 +4104,24 @@ var IMPORT_HEADER_MAP = {
 var importRows = [];
 
 function normalizeHeader(h){ return String(h||'').trim().toLowerCase().replace(/[^a-z0-9]/g,''); }
+// Dam / Sire columns come with many headings ("Dam RFID", "Dam's Tag", "Mother ID", "Sire Name"…),
+// but not "Dam Breed" and the like.
+var PARENT_SUFFIX = '(tag|id|rfid|eid|no|num|number|name|visual|vid|tagid|tagno|tagnum|tagnumber|visualid|eartag|eartagno|rfidtag|eidtag)?';
+var DAM_HEADER = new RegExp('^(dam|mother|mom|mum)s?' + PARENT_SUFFIX + '$');
+var SIRE_HEADER = new RegExp('^(sire|father)s?' + PARENT_SUFFIX + '$');
+// Which Rangebook field a spreadsheet column fills. A "Cow" / "Cow ID" / "Cow Tag" column next to a real
+// RFID column is the mother (as on heifer and calf sheets), not the animal's own ID.
+function importFieldFor(header, allHeaders){
+  const n = normalizeHeader(header);
+  if(DAM_HEADER.test(n)) return 'damId';
+  if(SIRE_HEADER.test(n)) return 'sireId';
+  const key = IMPORT_HEADER_MAP[n];
+  if(key==='tagId' && /^cow/.test(n)){
+    const realTag = (allHeaders||[]).some(o=>{ const on = normalizeHeader(o); return o!==header && !/^cow/.test(on) && IMPORT_HEADER_MAP[on]==='tagId'; });
+    if(realTag) return 'damId';
+  }
+  return key;
+}
 
 function normalizeClass(v){
   const s = String(v||'').trim().toLowerCase();
@@ -4239,9 +4257,10 @@ function processImportRows(rows){
   importRows = rows.map(row=>{
     const rec = {};
     const extras = [];
+    const headers = Object.keys(row).filter(h=> !h.startsWith('__'));
     Object.keys(row).forEach(h=>{
       if(h.startsWith('__')) return;
-      const key = IMPORT_HEADER_MAP[normalizeHeader(h)];
+      const key = importFieldFor(h, headers);
       const v = String(row[h]===undefined ? '' : row[h]).trim();
       if(!v) return;
       if(key){ if(!(key in rec)) rec[key] = row[h]; }
@@ -4372,10 +4391,26 @@ function resolveParentRef(value, want){
   return pick(state.animals.filter(x=> normRef(x.tagId)===key)) || pick(state.animals.filter(x=> normRef(x.name)===key));
 }
 // Point Dam / Sire at the matching animal's RFID. Only links when exactly one animal matches. Returns how many were linked.
+// Earlier imports kept unrecognised columns in Notes as "Heading: value". Move Dam / Sire ones back.
+function parentsFromNotes(a){
+  if(!a.notes || (a.damId && a.sireId)) return false;
+  let changed = false;
+  const kept = String(a.notes).split('; ').filter(seg=>{
+    const m = /^([^:]{1,40}):\s*(.+)$/.exec(seg);
+    if(!m) return true;
+    const n = normalizeHeader(m[1]);
+    if(!a.damId && DAM_HEADER.test(n)){ a.damId = m[2].trim(); changed = true; return false; }
+    if(!a.sireId && SIRE_HEADER.test(n)){ a.sireId = m[2].trim(); changed = true; return false; }
+    return true;
+  });
+  if(changed) a.notes = kept.join('; ');
+  return changed;
+}
 function linkParentRefs(onlyTags){
   let n = 0;
   state.animals.forEach(a=>{
     if(onlyTags && !onlyTags.has(a.tagId)) return;
+    if(parentsFromNotes(a)) n++;
     if(a.damId && !animalByTag(a.damId)){ const d = resolveParentRef(a.damId, 'dam'); if(d && d!==a){ a.damId = d.tagId; n++; } }
     if(a.sireId && !animalByTag(a.sireId)){ const s2 = resolveParentRef(a.sireId, 'sire'); if(s2 && s2!==a){ a.sireId = s2.tagId; n++; } }
   });
