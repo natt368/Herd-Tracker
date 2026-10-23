@@ -1137,6 +1137,9 @@ async function loadState(){
     }
   }
   storageReady = true;
+  // Repair Dam / Sire values that point at a herd animal in a slightly different form (e.g. from an older import).
+  const relinked = linkParentRefs(null);
+  if(relinked){ saveState(); setTimeout(()=> toast(`Linked ${relinked} dam/sire record${relinked===1?'':'s'} to animals in the herd`), 600); }
   refreshDriveStatusUI();
 }
 var saveTimer = null, offlineNoticeShown = false;
@@ -3883,12 +3886,24 @@ function removeAnimalFormPhoto(){
   const block = document.getElementById('animal-photo-block');
   if(block) block.innerHTML = renderAnimalModalPhotoBlock();
 }
+var LAST_ADD_KEY = 'herd-last-add';
+function lastAddedDefaults(){ try{ return JSON.parse(localStorage.getItem(LAST_ADD_KEY) || 'null'); }catch(e){ return null; } }
+function rememberLastAdded(rec){
+  try{ localStorage.setItem(LAST_ADD_KEY, JSON.stringify({ klass:rec.klass, breed:rec.breed, dob:rec.dob, yearLetter:rec.yearLetter, status:rec.status })); }catch(e){}
+}
+function clearAddDefaults(){
+  try{ localStorage.removeItem(LAST_ADD_KEY); }catch(e){}
+  closeModal(); openAnimalModal();
+}
 function openAnimalModal(presetKlass, editId){
   const editing = editId ? animalById(editId) : null;
-  const a = editing || { id:uid(), tagId:'', name:'', klass:presetKlass||'Cow', breed:'', dob:'', yearLetter:'', damId:'', sireId:'', status:'active', pasture:'', notes:'', salePrice:'', weights:[], photo:null };
+  // A new animal starts with the class, breed, birthday, year letter and status of the last one added.
+  const last = editing ? null : lastAddedDefaults();
+  const a = editing || { id:uid(), tagId:'', name:'', klass:presetKlass||(last && last.klass)||'Cow', breed:(last && last.breed)||'', dob:(last && last.dob)||'', yearLetter:(last && last.yearLetter)||'', damId:'', sireId:'', status:(last && last.status)||'active', pasture:'', notes:'', salePrice:'', weights:[], photo:null };
   animalFormPhoto = a.photo || null;
   const body = `
     <form onsubmit="saveAnimal(event, '${a.id}', ${editing? 'true':'false'})">
+      ${!editing && last ? `<p class="hint" style="margin:0 0 12px;">Class, breed, birthday, year letter and status are filled in from the last animal you added. <a href="#" onclick="event.preventDefault(); clearAddDefaults();" style="color:var(--rust); font-weight:600;">Start blank</a></p>` : ''}
       ${!editing ? `<div class="field" style="margin-bottom:18px; padding:10px 12px; background:var(--surface-2); border-radius:var(--radius); display:flex; align-items:center; justify-content:space-between; gap:10px;">
         <span class="hint" style="margin:0;">Adding more than one? Import a spreadsheet instead.</span>
         <button type="button" class="btn ghost sm" onclick="closeModal(); openImportModal();">Import .xlsx</button>
@@ -4043,6 +4058,7 @@ function saveAnimal(evt, id, editing){
     rec.weights = [];
     rec.weanDate = null;
     state.animals.push(rec);
+    rememberLastAdded(rec);
   }
   saveState();
   closeModal();
@@ -4190,6 +4206,12 @@ var importSheets = [];
 function readImportSheet(name, sheet){
   // Keep blank rows so row numbers match what Excel shows.
   const grid = XLSX.utils.sheet_to_json(sheet, { header:1, defval:'', raw:false, blankrows:true });
+  // Excel shows long numbers (RFIDs) as "9.82E+14"; use the real number for those cells.
+  const rawGrid = XLSX.utils.sheet_to_json(sheet, { header:1, defval:'', raw:true, blankrows:true });
+  grid.forEach((row, r)=> row.forEach((cell, c)=>{
+    const raw = rawGrid[r] && rawGrid[r][c];
+    if(typeof raw==='number' && Number.isInteger(raw) && /e[+-]?\d/i.test(String(cell))) row[c] = String(raw);
+  }));
   const firstRow = sheet['!ref'] ? XLSX.utils.decode_range(sheet['!ref']).s.r + 1 : 1;
   const h = grid.slice(0, 15).findIndex(row=> row.some(c=> IMPORT_HEADER_MAP[normalizeHeader(c)]==='tagId'));
   if(h<0) return { name, rows:[], headerFound:false, include:false };
@@ -4323,16 +4345,43 @@ function renderImportPreview(){
 // Spreadsheet column -> animal field, for overwriting an existing animal with only the cells that were filled in.
 var IMPORT_OVERWRITE_FIELDS = ['name','klass','breed','dob','yearLetter','damId','sireId','status','pasture','notes','scrotalCm','semenCheck','semenCheckDate','purchasePrice','purchasedFrom','purchaseDate'];
 // Dam/Sire cells may hold a name instead of an RFID; link them to that animal's RFID when the name is unique.
-function linkParentsByName(tags){
-  const unique = (list, name)=>{ const m = list.filter(x=> String(x.name||'').trim().toLowerCase()===name); return m.length===1 ? m[0] : null; };
-  const females = state.animals.filter(x=> x.klass==='Cow' || x.klass==='Heifer');
-  const bulls = state.animals.filter(x=> x.klass==='Bull');
-  state.animals.forEach(a=>{
-    if(!tags.has(a.tagId)) return;
-    if(a.damId && !animalByTag(a.damId)){ const d = unique(females, String(a.damId).trim().toLowerCase()); if(d) a.damId = d.tagId; }
-    if(a.sireId && !animalByTag(a.sireId)){ const b = unique(bulls, String(a.sireId).trim().toLowerCase()); if(b) a.sireId = b.tagId; }
-  });
+/* Dam / Sire values from a spreadsheet or typed by hand can be an RFID or a name, written a little
+   differently from the herd record ("48 H" vs "48H", "102.0", spaces in an RFID). Find the one animal
+   they mean; if several share a name, prefer the right sex, then grown animals, then ones in the herd. */
+function normRef(v){
+  let t = String(v||'').trim().toLowerCase();
+  if(/^\d+\.0+$/.test(t)) t = t.replace(/\.0+$/, '');
+  return t.replace(/[\s\-_]+/g, '');
 }
+function resolveParentRef(value, want){
+  const raw = String(value||'').trim();
+  if(!raw) return null;
+  const exact = animalByTag(raw);
+  if(exact) return exact;
+  const key = normRef(raw);
+  if(!key) return null;
+  const pick = list=>{
+    if(list.length<=1) return list[0] || null;
+    const female = x=> ['Cow','Heifer'].includes(x.klass);
+    const sexOk = list.filter(x=> want==='dam' ? female(x) : x.klass==='Bull');
+    let l = sexOk.length ? sexOk : list;
+    const grown = l.filter(x=> !isCalfClass(x)); if(grown.length) l = grown;
+    const live = l.filter(isActive); if(live.length) l = live;
+    return l.length===1 ? l[0] : null;
+  };
+  return pick(state.animals.filter(x=> normRef(x.tagId)===key)) || pick(state.animals.filter(x=> normRef(x.name)===key));
+}
+// Point Dam / Sire at the matching animal's RFID. Only links when exactly one animal matches. Returns how many were linked.
+function linkParentRefs(onlyTags){
+  let n = 0;
+  state.animals.forEach(a=>{
+    if(onlyTags && !onlyTags.has(a.tagId)) return;
+    if(a.damId && !animalByTag(a.damId)){ const d = resolveParentRef(a.damId, 'dam'); if(d && d!==a){ a.damId = d.tagId; n++; } }
+    if(a.sireId && !animalByTag(a.sireId)){ const s2 = resolveParentRef(a.sireId, 'sire'); if(s2 && s2!==a){ a.sireId = s2.tagId; n++; } }
+  });
+  return n;
+}
+function linkParentsByName(){ return linkParentRefs(null); }
 function confirmImport(){
   const fresh = importRows.filter(r=>!r.issue && !r.inHerd);
   const dups = importRows.filter(r=>!r.issue && r.inHerd);
