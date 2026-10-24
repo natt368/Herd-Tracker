@@ -2835,11 +2835,30 @@ function viewHealth(){
 /* ---------- Dam performance (from her calves' weights) ----------
    Birth weight: the first weight within 7 days of birth. Weaning weight: the weight recorded closest to
    the weaning date (within 30 days). Gain: (weaning − birth) ÷ days between them. */
+/* Birth weight: entered on the animal (or at calving), else a weight within 7 days of birth, else the
+   90 lb default. Entered birth weights must be 40–150 lb. */
+var BW_MIN = 40, BW_MAX = 150, BW_DEFAULT = 90;
+function parseBirthWeight(v){
+  if(v===undefined || v===null || String(v).trim()==='') return { value:'', ok:true };
+  const n = Number(String(v).replace(/[^0-9.]/g,''));
+  if(!(n >= BW_MIN && n <= BW_MAX)) return { value:'', ok:false };
+  return { value: Math.round(n*10)/10, ok:true };
+}
+function birthWeightOf(a){
+  if(!a) return null;
+  const set = Number(a.birthWeight);
+  if(set >= BW_MIN && set <= BW_MAX) return { lbs:set, date:a.dob||'', recorded:true };
+  const ws = (a.weights||[]).filter(w=> w && w.date && Number(w.lbs) > 0 && a.dob).sort((x,y)=> x.date<y.date?-1:1);
+  const early = ws.find(w=>{ const d = daysBetween(a.dob, w.date); return d>=0 && d<=7; });
+  if(early) return { lbs:Number(early.lbs), date:early.date, recorded:true };
+  return { lbs:BW_DEFAULT, date:a.dob||'', recorded:false };
+}
 function calfWeightFacts(c){
   const ws = (c.weights||[]).filter(w=> w && w.date && Number(w.lbs) > 0).slice().sort((x,y)=> x.date<y.date?-1:1);
   const latest = ws.length ? ws[ws.length-1] : null;
   let birth = null, wean = null;
-  if(c.dob) birth = ws.find(w=>{ const d = daysBetween(c.dob, w.date); return d>=0 && d<=7; }) || null;
+  const bw = birthWeightOf(c);
+  if(bw && (bw.recorded || c.dob)) birth = { lbs:bw.lbs, date:bw.date || c.dob, estimated:!bw.recorded };
   if(c.weanDate && ws.length){
     const near = ws.map(w=>({ w, d: Math.abs(daysBetween(c.weanDate, w.date)) })).filter(x=> x.d<=30).sort((x,y)=> x.d-y.d)[0];
     wean = near ? near.w : null;
@@ -2855,7 +2874,7 @@ function damPerformance(dam){
   const facts = calves.map(c=>({ c, f: calfWeightFacts(c) }));
   return {
     calves: calves.length,
-    avgBirth: avgOf(facts.map(x=> x.f.birth ? Number(x.f.birth.lbs) : null)),
+    avgBirth: avgOf(facts.map(x=> x.f.birth && !x.f.birth.estimated ? Number(x.f.birth.lbs) : null)),
     avgWean: avgOf(facts.map(x=> x.f.wean ? Number(x.f.wean.lbs) : null)),
     weanedWeighed: facts.filter(x=> x.f.wean).length,
     avgAdg: avgOf(facts.map(x=> x.f.adg)),
@@ -3993,6 +4012,7 @@ function openAnimalModal(presetKlass, editId){
           <p class="hint">Breeds are added in Settings ⚙ → Breeds.</p>
         </div>
       </div>
+      <div class="field"><label>Birth weight (lb)</label><input type="number" name="birthWeight" min="${BW_MIN}" max="${BW_MAX}" step="0.1" value="${escapeHtml(a.birthWeight||'')}" placeholder="${BW_DEFAULT} (default)"><p class="hint">${BW_MIN}–${BW_MAX} lb. Leave blank to use the ${BW_DEFAULT} lb default.</p></div>
       <div class="field-row ${editing ? '' : 'three'}">
         <div class="field"><label>Date of birth</label><input type="date" name="dob" value="${a.dob||''}" onchange="syncYearLetterFromDob(this)"><p class="hint" id="dob-letter-note"></p></div>
         <div class="field"><label>Year letter <span id="year-letter-swatch" title="Tag colour for this year letter" style="display:inline-block; width:10px; height:10px; border-radius:50%; vertical-align:middle; margin-left:4px; border:1px solid rgba(0,0,0,0.2); background:${tagColorForLetter(a.yearLetter)||'transparent'};"></span></label><input type="text" name="yearLetter" maxlength="2" oninput="const sw=document.getElementById('year-letter-swatch'); if(sw) sw.style.background = tagColorForLetter(this.value)||'transparent'; const h=document.getElementById('year-letter-hint'); if(h) h.textContent = yearLetterHint(this.value);" value="${escapeHtml(a.yearLetter)}" placeholder="e.g. N" style="text-transform:uppercase;"><p class="hint" id="year-letter-hint">${escapeHtml(yearLetterHint(a.yearLetter))}</p></div>
@@ -4086,6 +4106,8 @@ function toggleSalePriceField(){
 function saveAnimal(evt, id, editing){
   evt.preventDefault();
   const f = evt.target;
+  const bwIn = parseBirthWeight(f.birthWeight ? f.birthWeight.value : '');
+  if(!bwIn.ok){ toast(`Birth weight must be between ${BW_MIN} and ${BW_MAX} lb`); if(f.birthWeight) f.birthWeight.focus(); return; }
   // When editing, status, pasture and sale price are kept as they are (they change through Log event).
   const existing = editing ? (animalById(id) || {}) : {};
   const rec = {
@@ -4112,6 +4134,7 @@ function saveAnimal(evt, id, editing){
   rec.purchasePrice = isBull && f.purchasePrice.value!=='' ? Number(f.purchasePrice.value) : '';
   rec.purchasedFrom = isBull ? f.purchasedFrom.value.trim() : '';
   rec.purchaseDate = isBull ? f.purchaseDate.value : '';
+  rec.birthWeight = bwIn.value;
   ensurePastureExists(rec.pasture);
   ensureBreedExists(rec.breed);
   if(editing){
@@ -4162,6 +4185,7 @@ var IMPORT_HEADER_MAP = {
   purchaseprice:'purchasePrice', price:'purchasePrice', cost:'purchasePrice', boughtfor:'purchasePrice', paid:'purchasePrice',
   purchasedfrom:'purchasedFrom', breeder:'purchasedFrom', seller:'purchasedFrom', boughtfrom:'purchasedFrom', source:'purchasedFrom', bullbreeder:'purchasedFrom',
   purchasedate:'purchaseDate', datepurchased:'purchaseDate', bought:'purchaseDate', datebought:'purchaseDate',
+  birthweight:'birthWeight', birthwt:'birthWeight', bw:'birthWeight', bwt:'birthWeight', birthweightlb:'birthWeight', birthweightlbs:'birthWeight',
   weight:'weight', currentweight:'weight', weightlb:'weight', weightlbs:'weight', wt:'weight', lbs:'weight', weightinlbs:'weight',
 };
 var importRows = [];
@@ -4363,6 +4387,8 @@ function processImportRows(rows){
       yearLetter: String(rec.yearLetter||'').trim().toUpperCase() || letterForDate(parseDateFlexible(rec.dob)),
       damId: String(rec.damId||'').trim(),
       visualTag: String(rec.visualTag||'').trim(),
+      birthWeight: parseBirthWeight(rec.birthWeight).value,
+      birthWeightBad: !parseBirthWeight(rec.birthWeight).ok,
       sireId: String(rec.sireId||'').trim(),
       scrotalCm: rec.scrotalCm!==undefined && !isNaN(parseFloat(rec.scrotalCm)) ? parseFloat(rec.scrotalCm) : '',
       semenCheck: normalizeSemenCheck(rec.semenCheck),
@@ -4439,7 +4465,7 @@ function renderImportPreview(){
 }
 
 // Spreadsheet column -> animal field, for overwriting an existing animal with only the cells that were filled in.
-var IMPORT_OVERWRITE_FIELDS = ['name','visualTag','klass','breed','dob','yearLetter','damId','sireId','status','pasture','notes','scrotalCm','semenCheck','semenCheckDate','purchasePrice','purchasedFrom','purchaseDate'];
+var IMPORT_OVERWRITE_FIELDS = ['name','visualTag','birthWeight','klass','breed','dob','yearLetter','damId','sireId','status','pasture','notes','scrotalCm','semenCheck','semenCheckDate','purchasePrice','purchasedFrom','purchaseDate'];
 // Dam/Sire cells may hold a name instead of an RFID; link them to that animal's RFID when the name is unique.
 /* Dam / Sire values from a spreadsheet or typed by hand can be an RFID or a name, written a little
    differently from the herd record ("48 H" vs "48H", "102.0", spaces in an RFID). Find the one animal
@@ -4526,7 +4552,7 @@ function confirmImport(){
   updates.forEach(r=>{
     const a = animalByTag(r.tagId);
     if(!a) return;
-    IMPORT_OVERWRITE_FIELDS.forEach(k=>{ if(r.provided.includes(k)) a[k] = r[k]; });
+    IMPORT_OVERWRITE_FIELDS.forEach(k=>{ if(r.provided.includes(k) && !(k==='birthWeight' && r.birthWeightBad)) a[k] = r[k]; });
     // A new birthday without a year letter column moves the year letter with it.
     if(r.provided.includes('dob') && r.dob && !(r.provided.includes('yearLetter') && String(r.yearLetter||'').trim())) a.yearLetter = letterForDate(r.dob);
     const w = Number(r.weight);
@@ -4550,6 +4576,7 @@ function confirmImport(){
       id: uid(), tagId: r.tagId, name: r.name, klass: r.klass, breed: r.breed, dob: r.dob, yearLetter: r.yearLetter,
       damId: r.damId, sireId: r.sireId, status: r.status, pasture: r.pasture, notes: r.notes,
       ...(r.visualTag ? { visualTag: r.visualTag } : {}),
+      ...(r.birthWeight!=='' ? { birthWeight: r.birthWeight } : {}),
       scrotalCm: r.scrotalCm, semenCheck: r.semenCheck, semenCheckDate: r.semenCheckDate,
       purchasePrice: r.purchasePrice, purchasedFrom: r.purchasedFrom, purchaseDate: r.purchaseDate,
       weights, weanDate: null
@@ -4566,6 +4593,8 @@ function confirmImport(){
   if(dups.length && !updates.length) parts.push(`skipped ${dups.length} already in herd`);
   const msg = parts.join(', ');
   toast(msg.charAt(0).toUpperCase() + msg.slice(1));
+  const badBw = [...fresh, ...updates].filter(r=> r.birthWeightBad).length;
+  if(badBw) setTimeout(()=> toast(`${badBw} birth weight${badBw===1?' was':'s were'} outside ${BW_MIN}–${BW_MAX} lb and left out`), 1800);
   const tags = new Set([...fresh, ...updates].map(r=>r.tagId));
   const unmatched = state.animals.filter(a=> tags.has(a.tagId) && a.damId && !animalByTag(a.damId));
   if(unmatched.length){
@@ -4690,7 +4719,9 @@ function openEventModal(presetAnimalId, presetGroupIds){
           </div>
           <div class="field"><label>Calf RFID *</label><input type="text" name="calfTagId" placeholder="e.g. 982 000123456789" autocomplete="off"></div>
         </div>
-        <div class="field"><label>Calf name *</label><input type="text" name="calfName" placeholder="e.g. Clover's 2026 calf">
+        <div class="field-row">
+          <div class="field"><label>Calf name *</label><input type="text" name="calfName" placeholder="e.g. Clover's 2026 calf"></div>
+          <div class="field"><label>Calf birth weight (lb)</label><input type="number" name="calfBirthWeight" min="${BW_MIN}" max="${BW_MAX}" step="0.1" value="${BW_DEFAULT}"><p class="hint">${BW_MIN}–${BW_MAX} lb.</p></div>
         </div>
         <p class="hint" style="margin-top:-6px; margin-bottom:14px;">We'll add the calf to your herd automatically, paired to this dam.</p>
       </div>
@@ -4888,6 +4919,7 @@ function saveEvent(evt){
     if(!calfTagId){ toast('Enter the calf\'s RFID'); return; }
     if(!f.calfName.value.trim()){ toast('Enter a name for the calf'); return; }
     if(animalByTag(calfTagId)){ toast('That RFID is already in use'); return; }
+    if(!parseBirthWeight(f.calfBirthWeight.value).ok || f.calfBirthWeight.value===''){ toast(`Calf birth weight must be between ${BW_MIN} and ${BW_MAX} lb`); f.calfBirthWeight.focus(); return; }
   }
   const animalId = f.animalId.value;
   const a = animalById(animalId);
@@ -4917,7 +4949,8 @@ function saveEvent(evt){
         breed: cow.breed || '', dob: date, yearLetter: letterForDate(date),
         damId: cow.tagId, sireId: rec ? (rec.sireTagId||'') : '',
         status: 'active', pasture: cow.pasture || '', notes: '',
-        weights: [], weanDate: null
+        birthWeight: parseBirthWeight(f.calfBirthWeight.value).value,
+        weights: [{ date, lbs: parseBirthWeight(f.calfBirthWeight.value).value }], weanDate: null
       });
       calfAdded = true;
       if(cow.klass==='Heifer') promotedHeifer = displayName(cow);
@@ -5155,6 +5188,7 @@ function openDrawer(id){
         <div class="kv"><div class="k">Semen check</div><div class="v" style="color:${a.semenCheck==='Failed'?'var(--danger)':a.semenCheck==='Passed'?'var(--pasture-dark)':'inherit'};">${a.semenCheck ? escapeHtml(a.semenCheck)+(a.semenCheckDate? ' · '+fmtDate(a.semenCheckDate):'') : 'Not tested'}</div></div>` : ''}
         ${a.klass==='Bull' ? `<div class="kv"><div class="k">Purchase price</div><div class="v">${a.purchasePrice!==undefined && a.purchasePrice!=='' ? '$'+Number(a.purchasePrice).toLocaleString(undefined,{minimumFractionDigits:2, maximumFractionDigits:2}) : '—'}</div></div>
         <div class="kv"><div class="k">Purchased from</div><div class="v">${escapeHtml(a.purchasedFrom)||'—'}${a.purchaseDate? ' · '+fmtDate(a.purchaseDate):''}</div></div>` : ''}
+        <div class="kv"><div class="k">Birth weight</div><div class="v">${(bw=> bw.recorded ? bw.lbs+' lb' : bw.lbs+' lb <span class="muted" style="font-weight:500;">(default)</span>')(birthWeightOf(a))}</div></div>
         <div class="kv"><div class="k">Latest weight</div><div class="v">${latestWeight(a)? latestWeight(a).lbs+' lb':'—'}</div></div>
         ${a.status==='sold' ? `<div class="kv"><div class="k">Sale price</div><div class="v">${a.salePrice!==undefined && a.salePrice!==''? '$'+Number(a.salePrice).toLocaleString(undefined,{minimumFractionDigits:2, maximumFractionDigits:2}) : '—'}</div></div>` : ''}
       </div>
@@ -5169,12 +5203,12 @@ function openDrawer(id){
           <tbody>${p.facts.slice().sort((x,y)=> (y.c.dob||'') < (x.c.dob||'') ? -1 : 1).map(({c, f})=>`<tr onclick="openDrawer('${c.id}')">
             <td><span class="t">${escapeHtml(displayName(c))}</span>${isActive(c) ? '' : ` <span class="muted" style="font-size:11px;">${statusLabel(c.status)}</span>`}</td>
             <td>${c.dob ? fmtDate(c.dob) : '—'}</td>
-            <td>${f.birth ? f.birth.lbs : '—'}</td>
+            <td>${f.birth ? (f.birth.estimated ? `<span class="muted" title="No birth weight recorded — 90 lb default">${f.birth.lbs}*</span>` : f.birth.lbs) : '—'}</td>
             <td>${f.wean ? `<b>${f.wean.lbs}</b>` : (c.weanDate ? '<span class="muted">not weighed</span>' : '<span class="muted">at side</span>')}</td>
             <td>${f.latest ? f.latest.lbs : '—'}</td>
           </tr>`).join('')}</tbody>
         </table>
-        <p class="hint" style="margin:6px 0 0;">Weights in lb.</p>`)(damPerformance(a))}
+        <p class="hint" style="margin:6px 0 0;">Weights in lb.${p.facts.some(x=> x.f.birth && x.f.birth.estimated) ? ' * no birth weight recorded — the 90 lb default is used for gain.' : ''}</p>`)(damPerformance(a))}
       </div>`:''}
 
       <div class="drawer-section">
