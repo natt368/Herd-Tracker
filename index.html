@@ -286,6 +286,12 @@
   .conn-btn .conn-badge.ok{ background:var(--pasture); }
   .conn-btn .conn-badge.waiting{ background:var(--danger); }
   .conn-btn .conn-badge:empty{ display:none; }
+  .offspring-table{ width:100%; border-collapse:collapse; font-size:12.5px; }
+  .offspring-table th{ text-align:left; font-size:10.5px; text-transform:uppercase; letter-spacing:.05em; color:var(--ink-soft); padding:4px 6px; border-bottom:1px solid var(--line); }
+  .offspring-table td{ padding:6px; border-bottom:1px solid var(--line-soft); font-family:'JetBrains Mono', monospace; }
+  .offspring-table td:first-child{ font-family:inherit; }
+  .offspring-table tbody tr{ cursor:pointer; }
+  .offspring-table tbody tr:hover{ background:var(--surface-2); }
   .pencil-btn{ display:inline-flex; align-items:center; justify-content:center; width:30px; height:30px; border-radius:50%; border:1px solid var(--line); background:var(--surface); color:var(--ink-soft); cursor:pointer; flex-shrink:0; }
   .pencil-btn:hover{ color:var(--rust); border-color:var(--rust); background:var(--white); }
   .drawer-log-btn{ display:block; width:100%; justify-content:center; text-align:center; padding:12px 16px; font-size:15px; margin:12px 0 16px; }
@@ -2224,21 +2230,15 @@ function viewPairs(){
     </div>
   `;
 }
-// Record weaning by hand: logs a Weaning event for the calf, which ends the pair.
+// Record weaning by hand: opens Log event for the calf with Weaning ticked, ready for the weaning weight
+// (which counts toward the dam's performance). Saving ends the pair.
 function weanCalf(id){
   const calf = animalById(id);
   if(!calf) return;
-  const ev = { id: uid(), animalId: calf.id, type: 'Weaning', date: todayStr(), notes: '', nextDue: null, vaccine: '', vaccines: [], individual: true };
-  state.events.push(ev);
-  calf.weanDate = ev.date;
-  saveState();
-  render();
-  toastAction(`${displayName(calf)} weaned today`, 'Undo', ()=>{
-    state.events = state.events.filter(e=> e.id!==ev.id);
-    calf.weanDate = null;
-    saveState();
-    render();
-  }, 10000);
+  openEventModal(calf.id);
+  setEventTypes(['Weaning']);
+  const w = document.querySelector('.modal input[name="weight"]');
+  if(w){ w.placeholder = 'Weaning weight, e.g. 560'; setTimeout(()=> w.focus(), 50); }
 }
 
 /* =========================================================
@@ -2832,6 +2832,67 @@ function viewHealth(){
 /* =========================================================
    BREEDING
 ========================================================= */
+/* ---------- Dam performance (from her calves' weights) ----------
+   Birth weight: the first weight within 7 days of birth. Weaning weight: the weight recorded closest to
+   the weaning date (within 30 days). Gain: (weaning − birth) ÷ days between them. */
+function calfWeightFacts(c){
+  const ws = (c.weights||[]).filter(w=> w && w.date && Number(w.lbs) > 0).slice().sort((x,y)=> x.date<y.date?-1:1);
+  const latest = ws.length ? ws[ws.length-1] : null;
+  let birth = null, wean = null;
+  if(c.dob) birth = ws.find(w=>{ const d = daysBetween(c.dob, w.date); return d>=0 && d<=7; }) || null;
+  if(c.weanDate && ws.length){
+    const near = ws.map(w=>({ w, d: Math.abs(daysBetween(c.weanDate, w.date)) })).filter(x=> x.d<=30).sort((x,y)=> x.d-y.d)[0];
+    wean = near ? near.w : null;
+  }
+  let adg = null;
+  if(birth && wean && wean.date > birth.date) adg = (Number(wean.lbs) - Number(birth.lbs)) / daysBetween(birth.date, wean.date);
+  return { birth, wean, latest, adg };
+}
+function offspringOf(dam){ return dam && dam.tagId ? state.animals.filter(c=> c.damId===dam.tagId) : []; }
+function avgOf(list){ const v = list.filter(x=> x!==null && x!==undefined && !isNaN(x)); return v.length ? v.reduce((a,b)=>a+b,0)/v.length : null; }
+function damPerformance(dam){
+  const calves = offspringOf(dam);
+  const facts = calves.map(c=>({ c, f: calfWeightFacts(c) }));
+  return {
+    calves: calves.length,
+    avgBirth: avgOf(facts.map(x=> x.f.birth ? Number(x.f.birth.lbs) : null)),
+    avgWean: avgOf(facts.map(x=> x.f.wean ? Number(x.f.wean.lbs) : null)),
+    weanedWeighed: facts.filter(x=> x.f.wean).length,
+    avgAdg: avgOf(facts.map(x=> x.f.adg)),
+    facts,
+  };
+}
+function lbs(n){ return n===null || n===undefined ? '—' : Math.round(n).toLocaleString() + ' lb'; }
+function damPerformanceHtml(){
+  const rows = state.animals.filter(a=> !isCalfClass(a) && offspringOf(a).length)
+    .map(dam=>({ dam, p: damPerformance(dam) })).filter(r=> r.p.avgWean!==null);
+  if(!rows.length) return `<div class="panel" style="margin-top:20px;"><h2>Dam performance</h2>
+    <p class="sub">Ranks each cow by her calves' weaning weights. Record a calf's weight when you wean it (Log event → Weaning, with a weight) and her results show here.</p></div>`;
+  const herdAvg = avgOf(rows.flatMap(r=> r.p.facts.map(x=> x.f.wean ? Number(x.f.wean.lbs) : null)));
+  rows.sort((x,y)=> y.p.avgWean - x.p.avgWean);
+  return `<div class="panel" style="margin-top:20px; padding:16px 22px 10px;">
+    <h2>Dam performance</h2>
+    <p class="sub">Each cow's calves: average weaning weight (the weight logged closest to weaning), compared with the herd average of <b>${lbs(herdAvg)}</b>. Click a cow to see each calf.</p>
+    <table class="ledger">
+      <thead><tr><th>#</th><th>Dam</th><th>Calves</th><th>Avg weaning wt</th><th>vs herd</th><th>Avg gain</th><th>Avg birth wt</th></tr></thead>
+      <tbody>
+        ${rows.map((r, i)=>{
+          const diff = r.p.avgWean - herdAvg;
+          const col = diff >= 0 ? 'var(--pasture-dark)' : 'var(--danger)';
+          return `<tr onclick="openDrawer('${r.dam.id}')">
+            <td class="num-cell">${i+1}</td>
+            <td>${eartag(r.dam)}</td>
+            <td class="num-cell">${r.p.calves}${r.p.weanedWeighed < r.p.calves ? ` <span class="muted" style="font-size:11px;">(${r.p.weanedWeighed} weighed)</span>` : ''}</td>
+            <td class="num-cell"><b>${lbs(r.p.avgWean)}</b></td>
+            <td class="num-cell" style="color:${col}; font-weight:700;">${diff >= 0 ? '+' : '−'}${Math.abs(Math.round(diff)).toLocaleString()} lb</td>
+            <td class="num-cell">${r.p.avgAdg===null ? '—' : r.p.avgAdg.toFixed(2) + ' lb/day'}</td>
+            <td class="num-cell">${lbs(r.p.avgBirth)}</td>
+          </tr>`;
+        }).join('')}
+      </tbody>
+    </table>
+  </div>`;
+}
 function viewBreeding(){
   const records = [...state.breeding].sort((a,b)=> a.breedingDate<b.breedingDate?1:-1);
   return `
@@ -2860,6 +2921,7 @@ function viewBreeding(){
         </tbody>
       </table>
     </div>`}
+    ${damPerformanceHtml()}
   `;
 }
 
@@ -5101,7 +5163,18 @@ function openDrawer(id){
 
       ${calves.length>0 ? `<div class="drawer-section">
         <h4>Offspring on record</h4>
-        ${calves.map(c=>`<div class="mini-row" style="cursor:pointer;" onclick="openDrawer('${c.id}')"><span class="t">${escapeHtml(displayName(c))}</span><span class="d">${fmtDate(c.dob)}</span></div>`).join('')}
+        ${(p=>`<p class="hint" style="margin:0 0 8px;">${p.calves} ${p.calves===1?'calf':'calves'}${p.avgWean!==null ? ` · avg weaning weight <b>${lbs(p.avgWean)}</b>` : ''}${p.avgAdg!==null ? ` · avg gain <b>${p.avgAdg.toFixed(2)} lb/day</b>` : ''}${p.avgBirth!==null ? ` · avg birth weight ${lbs(p.avgBirth)}` : ''}</p>
+        <table class="offspring-table">
+          <thead><tr><th>Calf</th><th>Born</th><th>Birth</th><th>Weaning</th><th>Latest</th></tr></thead>
+          <tbody>${p.facts.slice().sort((x,y)=> (y.c.dob||'') < (x.c.dob||'') ? -1 : 1).map(({c, f})=>`<tr onclick="openDrawer('${c.id}')">
+            <td><span class="t">${escapeHtml(displayName(c))}</span>${isActive(c) ? '' : ` <span class="muted" style="font-size:11px;">${statusLabel(c.status)}</span>`}</td>
+            <td>${c.dob ? fmtDate(c.dob) : '—'}</td>
+            <td>${f.birth ? f.birth.lbs : '—'}</td>
+            <td>${f.wean ? `<b>${f.wean.lbs}</b>` : (c.weanDate ? '<span class="muted">not weighed</span>' : '<span class="muted">at side</span>')}</td>
+            <td>${f.latest ? f.latest.lbs : '—'}</td>
+          </tr>`).join('')}</tbody>
+        </table>
+        <p class="hint" style="margin:6px 0 0;">Weights in lb.</p>`)(damPerformance(a))}
       </div>`:''}
 
       <div class="drawer-section">
