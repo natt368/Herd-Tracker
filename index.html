@@ -2833,10 +2833,9 @@ function viewHealth(){
    BREEDING
 ========================================================= */
 /* ---------- Dam performance (from her calves' weights) ----------
-   Birth weight: the first weight within 7 days of birth. Weaning weight: the weight recorded closest to
+   Birth weight: see birthWeightOf. Weaning weight: the weight recorded closest to
    the weaning date (within 30 days). Gain: (weaning − birth) ÷ days between them. */
-/* Birth weight: entered on the animal (or at calving), else a weight within 7 days of birth, else the
-   90 lb default. Entered birth weights must be 40–150 lb. */
+/* Birth weight: entered on the animal (or at calving), else the 90 lb default. Entered birth weights must be 40–150 lb. */
 var BW_MIN = 40, BW_MAX = 150, BW_DEFAULT = 90;
 function parseBirthWeight(v){
   if(v===undefined || v===null || String(v).trim()==='') return { value:'', ok:true };
@@ -2848,9 +2847,6 @@ function birthWeightOf(a){
   if(!a) return null;
   const set = Number(a.birthWeight);
   if(set >= BW_MIN && set <= BW_MAX) return { lbs:set, date:a.dob||'', recorded:true };
-  const ws = (a.weights||[]).filter(w=> w && w.date && Number(w.lbs) > 0 && a.dob).sort((x,y)=> x.date<y.date?-1:1);
-  const early = ws.find(w=>{ const d = daysBetween(a.dob, w.date); return d>=0 && d<=7; });
-  if(early) return { lbs:Number(early.lbs), date:early.date, recorded:true };
   return { lbs:BW_DEFAULT, date:a.dob||'', recorded:false };
 }
 function calfWeightFacts(c){
@@ -4557,7 +4553,7 @@ function confirmImport(){
     if(r.provided.includes('dob') && r.dob && !(r.provided.includes('yearLetter') && String(r.yearLetter||'').trim())) a.yearLetter = letterForDate(r.dob);
     const w = Number(r.weight);
     if(r.provided.includes('weight') && !isNaN(w) && w>0){
-      const date = r.dob || todayStr();
+      const date = todayStr();
       a.weights = a.weights || [];
       if(!a.weights.some(x=>x.date===date && x.lbs===w)) a.weights.push({ date, lbs: w });
     }
@@ -4568,7 +4564,7 @@ function confirmImport(){
     const weights = [];
     if(r.weight){
       const w = Number(r.weight);
-      if(!isNaN(w) && w>0) weights.push({ date: r.dob || todayStr(), lbs: w });
+      if(!isNaN(w) && w>0) weights.push({ date: todayStr(), lbs: w });
     }
     if(r.pasture) ensurePastureExists(r.pasture);
     if(r.breed) ensureBreedExists(r.breed);
