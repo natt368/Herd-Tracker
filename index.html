@@ -106,6 +106,8 @@
   /* ---------- Layout ---------- */
   #app{max-width:1180px; margin:0 auto; padding:0 20px 80px;}
 
+  .sync-banner{ display:flex; align-items:center; gap:12px; justify-content:space-between; flex-wrap:wrap; margin:0 0 14px; padding:10px 14px; border-radius:var(--radius); background:#F6DCCF; border:1px solid #C9764F; color:#6A2A12; font-size:13.5px; font-weight:600; line-height:1.4; }
+  .sync-banner[hidden]{ display:none; }
   .topbar{
     display:flex; align-items:center; justify-content:space-between;
     padding:26px 0 18px;
@@ -776,6 +778,7 @@
     </div>
   </div>
 
+  <div id="sync-banner" class="sync-banner" role="alert" hidden></div>
   <nav class="tabs" id="tabs"></nav>
   <main id="view-root"><div class="cow-loader" role="status" aria-label="Loading herd data"><svg viewBox="0 0 120 84" width="120" height="84" aria-hidden="true"><g class="cow-ground"><path d="M0 72H14M26 72H40M52 72H66M78 72H92M104 72H118M130 72H144"/></g><g class="cow-body"><path class="cow-tail" d="M24 30C16 30 12 36 12 46"/><circle class="cow-tuft" cx="12" cy="48" r="3"/><g class="cow-leg cow-leg-b"><rect x="32" y="44" width="7" height="26" rx="3"/></g><g class="cow-leg cow-leg-a"><rect x="66" y="44" width="7" height="26" rx="3"/></g><rect x="22" y="22" width="64" height="30" rx="14"/><ellipse class="cow-spot" cx="40" cy="32" rx="9" ry="6"/><ellipse class="cow-spot" cx="64" cy="40" rx="6" ry="4"/><g class="cow-leg cow-leg-a"><rect x="26" y="44" width="7" height="26" rx="3"/></g><g class="cow-leg cow-leg-b"><rect x="74" y="44" width="7" height="26" rx="3"/></g><path class="cow-horn" d="M86 14Q84 6 90 4M98 14Q100 6 94 4"/><rect x="80" y="12" width="24" height="22" rx="9"/><ellipse cx="80" cy="16" rx="6" ry="3"/><ellipse cx="104" cy="16" rx="6" ry="3"/><rect class="cow-snout" x="92" y="24" width="16" height="12" rx="6"/><circle class="cow-eye" cx="96" cy="20" r="1.8"/></g></svg></div></main>
 </div>
@@ -858,7 +861,16 @@ function gasCall(fn, ...args){
 }
 function driveEnabled(){ return hostedInWorkspace || !!(driveConfig && driveConfig.url); }
 
+// Version 6+ scripts stamp every save of the Drive file (rev, when, who), so a device can tell
+// whether it already has the latest herd.
+var driveRemote = null;
+function noteDriveRev(r){ if(r && r.rev) driveRemote = { rev:r.rev, savedAt:r.savedAt||'', savedBy:r.savedBy||'', animals:r.animals }; }
 async function driveFetchState(){
+  if(hostedInWorkspace && driveScriptVersion >= 6){
+    const r = await gasCall('rbLoadRev');
+    noteDriveRev(r);
+    return JSON.parse((r && r.data) || '{}');
+  }
   if(hostedInWorkspace) return JSON.parse((await gasCall('rbLoad')) || '{}');
   const sep = driveConfig.url.includes('?') ? '&' : '?';
   let res;
@@ -890,6 +902,11 @@ async function driveCheckVersion(){
   return driveScriptVersion;
 }
 async function driveMergeSave(localJson, baseJson){
+  if(hostedInWorkspace && driveScriptVersion >= 6){
+    const r = await gasCall('rbSync', localJson, baseJson);
+    noteDriveRev(r);
+    return r.data;
+  }
   if(hostedInWorkspace) return gasCall('rbSave', localJson, baseJson);
   const res = await fetch(driveConfig.url, {
     method:'POST',
@@ -936,7 +953,12 @@ function connectionText(){
   if(isOffline() || driveStatus==='offline') return n ? `Offline — ${changes} saved on this phone, will sync when you're back online` : `Offline — keep working; changes will sync when you're back online`;
   if(n && driveStatus==='error') return `Online, but ${changes} haven't synced yet — will retry`;
   if(!driveEnabled()) return 'Online';
-  return n ? `Online — syncing ${changes}…` : 'Online — everything is synced';
+  if(n) return `Online — syncing ${changes}…`;
+  if(driveRemote && driveRemote.savedAt){
+    const when = new Date(driveRemote.savedAt).toLocaleString([], {month:'short', day:'numeric', hour:'numeric', minute:'2-digit'});
+    return `Online — up to date with Google Drive (last saved ${when}${driveRemote.savedBy ? ' by '+driveRemote.savedBy : ''})`;
+  }
+  return 'Online — everything is synced';
 }
 function refreshSyncBar(){
   const btn = document.getElementById('conn-btn'), icon = document.getElementById('conn-icon'), badge = document.getElementById('conn-badge');
@@ -963,6 +985,7 @@ window.addEventListener('online', onConnectionBack);
 window.addEventListener('offline', ()=>{ if(driveEnabled()) driveStatus = 'offline'; refreshDriveStatusUI(); });
 function refreshDriveStatusUI(){
   refreshSyncBar();
+  updateSyncBanner();
   const dot = document.getElementById('drive-dot');
   if(!dot) return;
   dot.classList.remove('connected','error');
@@ -1046,6 +1069,56 @@ function mergeStates(base, local, remote){
 }
 var syncInFlight = null;
 var syncAgain = false;
+/* Sync trouble that needs to be seen stays on screen as a banner under the top bar:
+   - Drive couldn't be loaded on open, so this device is showing its own (possibly older) copy;
+   - changes made here haven't reached Drive for a while. */
+var loadFellBack = false, syncFailingSince = null, lastSyncError = '', localSaveFailed = false;
+var LAST_SYNC_KEY = 'herd-last-sync';
+function saveLocalCopy(json){
+  try{ localStorage.setItem('herd-data', json || JSON.stringify(state)); localSaveFailed = false; }
+  catch(e){ localSaveFailed = true; }
+}
+function lastSyncedText(){
+  let t = 0; try{ t = Number(localStorage.getItem(LAST_SYNC_KEY)) || 0; }catch(e){}
+  return t ? new Date(t).toLocaleString([], {month:'short', day:'numeric', hour:'numeric', minute:'2-digit'}) : 'an earlier visit';
+}
+function syncBannerText(){
+  if(!driveEnabled()) return '';
+  if(loadFellBack){
+    return isOffline()
+      ? `Offline — showing the herd saved on this device (last synced ${lastSyncedText()}). It will update from Google Drive when you're back online.`
+      : `Couldn't load the latest herd from Google Drive — showing the copy saved on this device (last synced ${lastSyncedText()}). Retrying…`;
+  }
+  const n = pendingChangeCount();
+  if(n && driveStatus==='error' && syncFailingSince && Date.now() - syncFailingSince > 15000){
+    return `${n} change${n===1?'':'s'} on this device ${n===1?"hasn't":"haven't"} reached Google Drive yet — keep Rangebook open while it retries.`
+      + (localSaveFailed ? " This device's storage is full, so closing Rangebook now would lose them." : '')
+      + (lastSyncError ? ` (${lastSyncError})` : '');
+  }
+  return '';
+}
+function updateSyncBanner(){
+  const el = document.getElementById('sync-banner');
+  if(!el) return;
+  const msg = syncBannerText();
+  el.hidden = !msg;
+  if(msg) el.innerHTML = `<span>${escapeHtml(msg)}</span><button type="button" class="btn ghost sm" onclick="retrySyncNow()">Retry now</button>`;
+}
+function retrySyncNow(){
+  driveSync().then(()=> toast('Synced with Google Drive')).catch(e=>{ driveStatus = isOffline() ? 'offline' : 'error'; refreshDriveStatusUI(); toast("Still can't reach Google Drive — will keep trying"); });
+}
+// After a big change (an import), say plainly once it's on Drive — or that it isn't yet.
+function confirmOnDrive(label){
+  if(!driveEnabled()) return;
+  setTimeout(()=>{
+    driveSync().then(()=>{
+      if(!pendingChangeCount()) toast(`${label} saved to Google Drive — ${state.animals.length} animals there now`);
+    }).catch(()=>{
+      driveStatus = isOffline() ? 'offline' : 'error'; refreshDriveStatusUI();
+      toast(`${label} is saved on this device but hasn't reached Google Drive yet — keep Rangebook open while it retries`);
+    });
+  }, 400);
+}
 // Pull the latest Drive copy, fold in this device's changes, and push if anything of ours is new.
 function driveSync(){
   if(syncInFlight){ syncAgain = true; return syncInFlight; }
@@ -1058,8 +1131,10 @@ function driveSync(){
         const before = JSON.stringify(normalizeState(state));
         let mergedJson;
         if(syncBase !== null && before === syncBase){
-          // Nothing new here — just pick up everyone else's changes.
-          mergedJson = JSON.stringify(normalizeState(await driveFetchState()));
+          // Nothing new here — just pick up everyone else's changes, unless Drive's version stamp says there are none.
+          const st = hostedInWorkspace && driveScriptVersion >= 6 && driveRemote ? await gasCall('rbStatus') : null;
+          if(st && st.rev === driveRemote.rev){ noteDriveRev(st); mergedJson = before; }
+          else mergedJson = JSON.stringify(normalizeState(await driveFetchState()));
         } else {
           if(driveScriptVersion === null) await driveCheckVersion();
           if(driveScriptVersion >= 2){
@@ -1083,10 +1158,16 @@ function driveSync(){
           render();
           syncAgain = true;
         }
-        try{ localStorage.setItem('herd-data', JSON.stringify(state)); }catch(e){}
+        saveLocalCopy();
         driveStatus = 'connected';
         driveLastSync = new Date();
+        loadFellBack = false; syncFailingSince = null; lastSyncError = '';
+        try{ localStorage.setItem(LAST_SYNC_KEY, String(Date.now())); }catch(e){}
       } while(syncAgain);
+    } catch(e){
+      if(!syncFailingSince) syncFailingSince = Date.now();
+      lastSyncError = (e && e.message) || '';
+      throw e;
     } finally {
       syncInFlight = null;
       setDriveBusy(false);
@@ -1096,10 +1177,18 @@ function driveSync(){
   return syncInFlight;
 }
 function pullFromDrive(){
-  if(!storageReady || !driveEnabled() || document.hidden) return;
+  // A hidden tab still pushes changes that haven't reached Drive; it only skips checking for other people's.
+  if(!storageReady || !driveEnabled() || (document.hidden && !pendingChangeCount())) return;
   driveSync().catch(()=>{ driveStatus = isOffline() ? 'offline' : 'error'; refreshDriveStatusUI(); });
 }
 setInterval(pullFromDrive, 30000);
+// While Drive can't be reached (or this device couldn't load it), retry more often.
+setInterval(()=>{ if(driveStatus==='error' || loadFellBack) pullFromDrive(); }, 10000);
+// Closing Rangebook while changes are still on their way to Drive asks first.
+window.addEventListener('beforeunload', e=>{
+  if(!storageReady || !driveEnabled()) return;
+  if((syncInFlight || pendingChangeCount()) && (!isOffline() || localSaveFailed)){ e.preventDefault(); e.returnValue = ''; }
+});
 document.addEventListener('visibilitychange', pullFromDrive);
 window.addEventListener('focus', pullFromDrive);
 async function loadState(){
@@ -1133,7 +1222,7 @@ async function loadState(){
   }catch(e){
     if(driveEnabled()){
       driveStatus = isOffline() ? 'offline' : 'error';
-      if(!isOffline()) toast("Couldn't reach Google Drive — showing the copy on this phone");
+      loadFellBack = true;
       try{
         const raw = localStorage.getItem('herd-data');
         if(raw) applyLoadedState(JSON.parse(raw));
@@ -1146,6 +1235,7 @@ async function loadState(){
   // Repair Dam / Sire values that point at a herd animal in a slightly different form (e.g. from an older import).
   const relinked = linkParentRefs(null);
   if(relinked){ saveState(); setTimeout(()=> toast(`Linked ${relinked} dam/sire record${relinked===1?'':'s'} to animals in the herd`), 600); }
+  if(resetOldBirthWeights()) saveState();
   refreshDriveStatusUI();
 }
 var saveTimer = null, offlineNoticeShown = false;
@@ -1154,7 +1244,7 @@ function saveState(){
   clearTimeout(saveTimer);
   saveTimer = setTimeout(async ()=>{
     const json = JSON.stringify(state);
-    try{ localStorage.setItem('herd-data', json); }catch(e){}
+    saveLocalCopy(json);
     try{
       if(driveEnabled()){
         await driveSync();
@@ -2849,6 +2939,15 @@ function birthWeightOf(a){
   if(set >= BW_MIN && set <= BW_MAX) return { lbs:set, date:a.dob||'', recorded:true };
   return { lbs:BW_DEFAULT, date:a.dob||'', recorded:false };
 }
+// Birth weights entered before Oct 2026 were reset to the 90 lb default. Those carry no birthWeightAt
+// stamp; every birth weight entered since is stamped, so this only ever clears the old ones.
+function resetOldBirthWeights(){
+  let n = 0;
+  state.animals.forEach(a=>{
+    if(a.birthWeight !== undefined && a.birthWeight !== '' && a.birthWeight !== null && !a.birthWeightAt){ delete a.birthWeight; n++; }
+  });
+  return n;
+}
 function calfWeightFacts(c){
   const ws = (c.weights||[]).filter(w=> w && w.date && Number(w.lbs) > 0).slice().sort((x,y)=> x.date<y.date?-1:1);
   const latest = ws.length ? ws[ws.length-1] : null;
@@ -2956,7 +3055,7 @@ function modalShell(title, bodyHtml){
 /* ---------- Google Drive sync ---------- */
 var DRIVE_SCRIPT_VERSION = 3;
 // The Workspace script has its own version: 4 added choosing the data folder and Drive backups; 5 the Rangebook tab icon.
-var WORKSPACE_SCRIPT_VERSION = 5;
+var WORKSPACE_SCRIPT_VERSION = 6;
 // Merge logic shared by both Apps Script backends: replay one device's changes (base -> local) onto the current file.
 var GAS_MERGE_SRC = `const KEYS_ = {
   animals: function (r) { return r.id; },
@@ -3198,7 +3297,7 @@ function rbBackup(auto) {
     const folder = backupFolder_(true);
     const stamp = Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyy-MM-dd HH-mm-ss');
     const name = (auto ? 'rangebook-auto-backup ' : 'rangebook-backup ') + stamp + '.json';
-    folder.createFile(name, content, MimeType.PLAIN_TEXT);
+    folder.createFile(Utilities.newBlob(content, MimeType.PLAIN_TEXT, name));
     const at = new Date().toISOString();
     props.setProperties({ backupHash: hash, backupAt: at, backupName: name });
     if (auto) {
@@ -3218,18 +3317,73 @@ function rbLoad() {
   return dataFile_().getBlob().getDataAsString();
 }
 
+// Every save gets a version stamp (rev), with when and by whom, so each device can tell
+// whether it has the latest herd. The file's own last-updated time is part of the rev,
+// so a file restored or edited outside Rangebook also counts as a new version.
+function status_(file) {
+  const props = PropertiesService.getScriptProperties();
+  return {
+    rev: (props.getProperty('dataRev') || '0') + ':' + file.getLastUpdated().getTime(),
+    savedAt: props.getProperty('dataSavedAt') || file.getLastUpdated().toISOString(),
+    savedBy: props.getProperty('dataSavedBy') || '',
+    animals: Number(props.getProperty('dataAnimals') || 0)
+  };
+}
+
+function save_(localJson, baseJson) {
+  const parse = function (t) { try { return JSON.parse(t || '{}') || {}; } catch (err) { return {}; } };
+  const file = dataFile_();
+  const current = file.getBlob().getDataAsString();
+  const mergedObj = merge_(parse(baseJson), parse(localJson), parse(current));
+  const merged = JSON.stringify(mergedObj);
+  if (merged !== current) {
+    file.setContent(merged);
+    const props = PropertiesService.getScriptProperties();
+    props.setProperties({
+      dataRev: String(Number(props.getProperty('dataRev') || 0) + 1),
+      dataSavedAt: new Date().toISOString(),
+      dataSavedBy: Session.getActiveUser().getEmail() || '',
+      dataAnimals: String((mergedObj.animals || []).length)
+    });
+  }
+  return { file: file, merged: merged };
+}
+
 function rbSave(localJson, baseJson) {
   const lock = LockService.getScriptLock();
   lock.waitLock(30000);
   try {
-    const parse = function (t) { try { return JSON.parse(t || '{}') || {}; } catch (err) { return {}; } };
-    const file = dataFile_();
-    const merged = JSON.stringify(merge_(parse(baseJson), parse(localJson), parse(file.getBlob().getDataAsString())));
-    file.setContent(merged);
-    return merged;
+    return save_(localJson, baseJson).merged;
   } finally {
     lock.releaseLock();
   }
+}
+
+// Same as rbSave, but also returns the version stamp of what was saved.
+function rbSync(localJson, baseJson) {
+  const lock = LockService.getScriptLock();
+  lock.waitLock(30000);
+  try {
+    const out = save_(localJson, baseJson);
+    const st = status_(out.file);
+    st.data = out.merged;
+    return st;
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+// The herd with its version stamp. The stamp is read first: if a save lands in between,
+// the device holds newer data under an older stamp and simply loads again next time.
+function rbLoadRev() {
+  const file = dataFile_();
+  const st = status_(file);
+  st.data = file.getBlob().getDataAsString();
+  return st;
+}
+
+function rbStatus() {
+  return status_(dataFile_());
 }
 
 function rbInfo() {
@@ -3552,7 +3706,7 @@ function workspaceUpdateHtml(){
   return `
       <div class="field" style="background:var(--tag-bg); padding:12px 14px; border-radius:var(--radius); margin-bottom:16px;">
         <label style="margin-bottom:6px; color:var(--tag-dark);">Update your Workspace script</label>
-        <p class="hint" style="margin:0 0 8px; color:var(--ink-soft);">${driveScriptVersion < 4 ? 'Your script is an older version. Update it to choose which Drive folder the data is saved in, and to get automatic backups every minute.' : 'A new version of your script is ready: it shows the Rangebook horseshoe as the browser-tab icon.'} Updating takes a minute and keeps the same link:</p>
+        <p class="hint" style="margin:0 0 8px; color:var(--ink-soft);">${driveScriptVersion < 4 ? 'Your script is an older version. Update it to choose which Drive folder the data is saved in, and to get automatic backups every minute.' : 'A new version of your script is ready: it stamps every save with a version, so each computer can tell it has the latest herd, and it makes backups work for large herds.'} Updating takes a minute and keeps the same link:</p>
         <ol style="margin:0; padding-left:18px; font-size:12.5px; color:var(--ink-soft); line-height:1.7;">
           <li><button type="button" class="btn ghost sm" onclick="copyWorkspaceScript()">Copy updated script</button></li>
           <li>Open your project at <a href="https://script.google.com" target="_blank" rel="noopener" style="color:var(--rust); font-weight:600;">script.google.com</a>, replace all the code with the copied script, and save.</li>
@@ -4130,6 +4284,8 @@ function saveAnimal(evt, id, editing){
   rec.purchasePrice = isBull && f.purchasePrice.value!=='' ? Number(f.purchasePrice.value) : '';
   rec.purchasedFrom = isBull ? f.purchasedFrom.value.trim() : '';
   rec.purchaseDate = isBull ? f.purchaseDate.value : '';
+  if(bwIn.value === '') delete rec.birthWeightAt;
+  else if(rec.birthWeight !== bwIn.value || !rec.birthWeightAt) rec.birthWeightAt = new Date().toISOString();
   rec.birthWeight = bwIn.value;
   ensurePastureExists(rec.pasture);
   ensureBreedExists(rec.breed);
@@ -4549,6 +4705,7 @@ function confirmImport(){
     const a = animalByTag(r.tagId);
     if(!a) return;
     IMPORT_OVERWRITE_FIELDS.forEach(k=>{ if(r.provided.includes(k) && !(k==='birthWeight' && r.birthWeightBad)) a[k] = r[k]; });
+    if(r.provided.includes('birthWeight') && !r.birthWeightBad) a.birthWeightAt = new Date().toISOString();
     // A new birthday without a year letter column moves the year letter with it.
     if(r.provided.includes('dob') && r.dob && !(r.provided.includes('yearLetter') && String(r.yearLetter||'').trim())) a.yearLetter = letterForDate(r.dob);
     const w = Number(r.weight);
@@ -4572,7 +4729,7 @@ function confirmImport(){
       id: uid(), tagId: r.tagId, name: r.name, klass: r.klass, breed: r.breed, dob: r.dob, yearLetter: r.yearLetter,
       damId: r.damId, sireId: r.sireId, status: r.status, pasture: r.pasture, notes: r.notes,
       ...(r.visualTag ? { visualTag: r.visualTag } : {}),
-      ...(r.birthWeight!=='' ? { birthWeight: r.birthWeight } : {}),
+      ...(r.birthWeight!=='' ? { birthWeight: r.birthWeight, birthWeightAt: new Date().toISOString() } : {}),
       scrotalCm: r.scrotalCm, semenCheck: r.semenCheck, semenCheckDate: r.semenCheckDate,
       purchasePrice: r.purchasePrice, purchasedFrom: r.purchasedFrom, purchaseDate: r.purchaseDate,
       weights, weanDate: null
@@ -4580,6 +4737,7 @@ function confirmImport(){
   });
   linkParentsByName(new Set([...fresh, ...updates].map(r=>r.tagId)));
   saveState();
+  confirmOnDrive('Import');
   closeModal();
   currentTab = 'animals';
   render();
@@ -4945,7 +5103,7 @@ function saveEvent(evt){
         breed: cow.breed || '', dob: date, yearLetter: letterForDate(date),
         damId: cow.tagId, sireId: rec ? (rec.sireTagId||'') : '',
         status: 'active', pasture: cow.pasture || '', notes: '',
-        birthWeight: parseBirthWeight(f.calfBirthWeight.value).value,
+        birthWeight: parseBirthWeight(f.calfBirthWeight.value).value, birthWeightAt: new Date().toISOString(),
         weights: [{ date, lbs: parseBirthWeight(f.calfBirthWeight.value).value }], weanDate: null
       });
       calfAdded = true;
