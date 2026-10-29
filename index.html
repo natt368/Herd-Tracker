@@ -566,6 +566,17 @@
   .safety-row b{ text-align:right; overflow-wrap:anywhere; }
   .check-row{ display:flex !important; align-items:center; gap:8px; font-size:13px !important; font-weight:500 !important; text-transform:none !important; letter-spacing:0 !important; color:var(--ink) !important; margin:4px 0 !important; cursor:pointer; }
   .check-row input{ width:auto; margin:0; }
+  /* Change log (Settings → Manage Data). */
+  .audit-list{ max-height:360px; overflow:auto; border:1px solid var(--line-soft); border-radius:var(--radius); background:var(--surface); }
+  .audit-row{ display:flex; gap:10px; align-items:flex-start; padding:8px 10px; border-bottom:1px solid var(--line-soft); font-size:13px; }
+  .audit-row:last-child{ border-bottom:0; }
+  .audit-act{ flex-shrink:0; width:64px; font-size:10.5px; font-weight:800; text-transform:uppercase; letter-spacing:.04em; padding:2px 0; text-align:center; border-radius:3px; background:var(--surface-2); color:var(--ink-soft); }
+  .audit-act.added{ background:#E5F0DD; color:#2F6A2A; }
+  .audit-act.changed{ background:#E1EBF7; color:#245A9C; }
+  .audit-act.deleted{ background:#F6DCCF; color:#8A2A18; }
+  .audit-act.restored{ background:#FBEFD6; color:#8A5A12; }
+  .audit-main{ flex:1; min-width:0; overflow-wrap:anywhere; }
+  .audit-meta{ display:block; font-size:11.5px; color:var(--ink-soft); margin-top:2px; }
   /* Google Drive folder browser, found backups and restore list (Settings → Manage Data). */
   .drive-browser{ border:1px solid var(--line-soft); border-radius:var(--radius); margin-top:10px; background:var(--surface); overflow:hidden; }
   .drive-browser .db-head{ padding:8px 10px; border-bottom:1px solid var(--line-soft); background:var(--surface-2); font-size:13px; }
@@ -871,6 +882,12 @@ function colKey(col, r){
   const k = COL_KEYS[col](r);
   return (k===undefined || k===null || k==='') ? '' : String(k);
 }
+/* Time stamps decide which edit is newer, so they follow Google Drive's clock rather than this
+   computer's: each upload tells us how far this clock is off (drive.clockOffset). */
+function nowIso(){
+  const off = (typeof drive!=='undefined' && Math.abs(Number(drive.clockOffset)||0) > 2000) ? Number(drive.clockOffset) : 0;
+  return new Date(Date.now() + off).toISOString();
+}
 function isoMax(a, b){ return (a||'') > (b||'') ? (a||'') : (b||''); }
 
 /* A backup document (or the old plain herd JSON, or an old export) with every field filled in. */
@@ -956,7 +973,7 @@ function markSeen(){ lastSeen = snapshotState(); }
 function stampChanges(){
   const cur = snapshotState();
   if(!lastSeen){ lastSeen = cur; return 0; }
-  const now = new Date().toISOString();
+  const now = nowIso();
   let n = 0;
   ALL_COLS.forEach(col=>{
     const before = lastSeen[col], after = cur[col];
@@ -989,7 +1006,7 @@ function logChange(action, col, key, label, at){
   if(last && last.action===action && last.col===col && last.key===key && last.device===DEVICE_NAME && Date.parse(at) - Date.parse(last.at) < 120000){
     last.at = at; last.label = label; return;
   }
-  log.push({ id: uid(), at, device: DEVICE_NAME, action, col, key, what: COL_WORDS[col] || col, label: String(label||'').slice(0, 80) });
+  log.push({ id: uid(), at, device: DEVICE_NAME, by: drive.account || '', action, col, key, what: COL_WORDS[col] || col, label: String(label||'').slice(0, 80) });
   if(log.length > LOG_MAX) log.splice(0, log.length - LOG_MAX);
 }
 function mergeLogs(a, b){
@@ -1001,13 +1018,13 @@ function mergeLogs(a, b){
 /* ---------- Merge, record by record ----------
    Union of both sides; for a record on both, the newer `updated` wins; tombstones combine
    (newest time per record) and drop any record that isn't newer than its tombstone.
-   If one side deliberately replaced everything after the other side's last change
-   (a restore or reset), that side is taken as it is. */
+   A restore or reset needs no special rule: it stamps every restored record and tombstones every
+   record it removed at the moment it happened (see restoreDoc), so the merge takes the restored
+   version everywhere without ever throwing away a whole side, even when clocks disagree. */
 function mergeDocs(localRaw, remoteRaw){
   const L = fillDoc(localRaw), R = fillDoc(remoteRaw);
   const log = mergeLogs(L.log, R.log);
-  if(R.replacedAt && R.replacedAt > L.savedAt) return { doc: Object.assign({}, R, { log }), incoming: countDiff(L, R), replaced: true };
-  if(L.replacedAt && L.replacedAt > R.savedAt) return { doc: Object.assign({}, L, { log }), incoming: 0, replaced: false };
+  const replaced = !!R.replacedAt && R.replacedAt > (L.replacedAt || '');
   const out = { app:'rangebook', version:2, savedAt: isoMax(L.savedAt, R.savedAt), replacedAt: isoMax(L.replacedAt, R.replacedAt),
     settings: R.savedAt > L.savedAt ? R.settings : L.settings, tombs:{}, stamps:{}, log };
   ALL_COLS.forEach(col=>{
@@ -1027,7 +1044,7 @@ function mergeDocs(localRaw, remoteRaw){
     });
     out[col] = list; out.tombs[col] = tombs; out.stamps[col] = stamps;
   });
-  return { doc: out, incoming: countDiff(L, out), replaced: false };
+  return { doc: out, incoming: countDiff(L, out), replaced };
 }
 // How many records differ between two documents (added, changed or removed).
 function countDiff(a, b){
@@ -1072,12 +1089,19 @@ async function readLocalDoc(){
   try{ const raw = localStorage.getItem(LOCAL_FALLBACK_KEY); if(raw) return JSON.parse(raw); }catch(e){}
   return null;
 }
+/* Several tabs on one computer share these records. Each write is labelled with the tab that made it
+   ('writer'), and the other tabs fold it into what they have before they save or sync again. */
+var TAB_ID = Math.random().toString(36).slice(2, 10), localWriteSeq = 0, lastWriterSeen = '';
+var tabChannel = typeof BroadcastChannel!=='undefined' ? new BroadcastChannel('rangebook') : null;
 var localWriteChain = Promise.resolve();
 function writeLocalDoc(){
   const json = JSON.stringify(buildDoc());
+  const writer = TAB_ID + ':' + (++localWriteSeq);
   localWriteChain = localWriteChain.catch(()=>{}).then(async ()=>{
     try{
-      await idbDo('readwrite', s=> s.put(json, LOCAL_DOC_KEY));
+      await idbDo('readwrite', s=>{ s.put(writer, 'writer'); return s.put(json, LOCAL_DOC_KEY); });
+      lastWriterSeen = writer;
+      if(tabChannel) try{ tabChannel.postMessage({ type:'saved', writer }); }catch(e){}
       // The data now lives in IndexedDB; drop the older copies so they can't go stale.
       try{ ['herd-data','herd-sync-base','herd-drive-config','herd-drive-pending-secret','herd-last-sync'].forEach(k=> localStorage.removeItem(k)); }catch(e){}
     }catch(e){
@@ -1086,11 +1110,38 @@ function writeLocalDoc(){
   });
   return localWriteChain;
 }
+async function takeOtherTabsChanges(){
+  let writer, json;
+  try{ writer = await idbDo('readonly', s=> s.get('writer')); }catch(e){ return; }
+  if(!writer || writer===lastWriterSeen) return;
+  try{ json = await idbDo('readonly', s=> s.get(LOCAL_DOC_KEY)); }catch(e){ return; }
+  lastWriterSeen = writer;
+  if(!json) return;
+  // This tab's own unsaved change is stamped first, then both are combined record by record.
+  if(saveTimer){ clearTimeout(saveTimer); saveTimer = null; savingNow = false; }
+  const changed = stampChanges();
+  const r = mergeDocs(buildDoc(), JSON.parse(json));
+  applyDoc(r.doc);
+  try{ await writeLocalDoc(); localSaveFailed = false; }catch(e){ localSaveFailed = true; }
+  if(changed) scheduleBackup();
+  render(); refreshBadge();
+}
+function withSyncLock(fn){
+  return (typeof navigator!=='undefined' && navigator.locks && navigator.locks.request) ? navigator.locks.request('rangebook-sync', fn) : fn();
+}
+if(tabChannel) tabChannel.onmessage = e=>{
+  if(!storageReady || !e.data || e.data.type!=='saved' || e.data.writer===lastWriterSeen) return;
+  if(syncRun){ syncQueued = true; return; }   // the running sync goes round again and folds it in
+  withSyncLock(takeOtherTabsChanges).catch(()=>{});
+};
+// Closing or leaving the page: save a change that is still waiting.
+window.addEventListener('pagehide', ()=>{ if(saveTimer) flushSave(); });
 async function loadState(){
+  try{ lastWriterSeen = (await idbDo('readonly', s=> s.get('writer'))) || ''; }catch(e){}
   const raw = await readLocalDoc();
   applyDoc(raw || {});
   // Records from before time stamps existed: count them as saved now, so they back up with a real date.
-  if(docMeta.savedAt===OLD_STAMP) docMeta.savedAt = new Date().toISOString();
+  if(docMeta.savedAt===OLD_STAMP) docMeta.savedAt = nowIso();
   storageReady = true;
   // Repair Dam / Sire values that point at a herd animal in a slightly different form (e.g. from an older import).
   const relinked = linkParentRefs(null);
@@ -1144,7 +1195,10 @@ var DEVICE_NAME = deviceName();
 /* This computer's Drive settings. lastRemote / lastLocal are the Drive file's modifiedTime and this
    computer's savedAt at the last successful sync. */
 var DRIVE_DEFAULTS = { clientId:'', account:'', folderId:'', folderPath:'', mainId:'', lastRemote:'', lastLocal:'',
-  auto:true, loadOnOpen:true, keep:14, name:'Herd', lastBackupAt:'', lastDaily:'', lastDownloadAt:'', lastSize:0 };
+  auto:true, loadOnOpen:true, keep:14, name:'Herd', lastBackupAt:'', lastDaily:'', lastDownloadAt:'', lastSize:0, clockOffset:0 };
+// Sync book-keeping that every tab on this computer shares (re-read before each sync).
+var DRIVE_SYNC_FIELDS = ['mainId','lastRemote','lastLocal','lastBackupAt','lastDaily','lastSize','clockOffset','folderId','folderPath','account'];
+function reloadDriveSyncFields(){ const fresh = loadDriveCfg(); DRIVE_SYNC_FIELDS.forEach(k=>{ drive[k] = fresh[k]; }); }
 function loadDriveCfg(){
   try{ return Object.assign({}, DRIVE_DEFAULTS, JSON.parse(localStorage.getItem(DRIVE_CFG_KEY) || '{}')); }
   catch(e){ return Object.assign({}, DRIVE_DEFAULTS); }
@@ -1271,14 +1325,17 @@ function hideSigninBanner(){ const el = document.getElementById('signin-banner')
 function signinBannerConnect(){ withSignIn(()=>{ hideSigninBanner(); syncNow('signin'); }); }
 
 /* ---------- Drive REST calls ---------- */
-var FILE_FIELDS = 'id,name,mimeType,modifiedTime,size,appProperties,parents,trashed';
+var FILE_FIELDS = 'id,name,mimeType,createdTime,modifiedTime,size,appProperties,parents,trashed';
 function qs(params){ return Object.keys(params).map(k=> k + '=' + encodeURIComponent(params[k])).join('&'); }
 async function gapi(url, opts, retried){
   opts = opts || {};
   const token = await ensureToken();
   let res;
+  const t0 = Date.now();
   try{ res = await fetch(url, Object.assign({}, opts, { headers: Object.assign({}, opts.headers, { Authorization: 'Bearer ' + token }) })); }
   catch(e){ throw driveErr('offline', 'network'); }
+  const t1 = Date.now(), served = Date.parse(res.headers.get('date') || '');
+  if(!isNaN(served) && t1 - t0 < 15000) drive.clockOffset = Math.round(served + 500 - (t0 + t1) / 2);
   if(res.status===401 && !retried){ tok = { access:'', exp:0 }; saveTok(); return gapi(url, opts, true); }
   if(res.status===401) throw driveErr('auth');
   if(res.ok) return res;
@@ -1342,19 +1399,34 @@ async function driveDownload(id){
 async function driveTrash(id){
   await gapi(`${DRIVE_API}/files/${encodeURIComponent(id)}?supportsAllDrives=true`, { method:'PATCH', headers:{ 'Content-Type':'application/json' }, body: JSON.stringify({ trashed: true }) });
 }
-async function findMainFile(){
-  if(drive.mainId){
+/* Every main backup file in the folder. Normally there is one; if two computers each started a
+   backup in an empty folder at the same moment there can be two. Every computer picks the same one
+   (the oldest) and merges any others into it, so they can never drift apart. */
+async function findMainFiles(){
+  const list = await driveList(`'${drive.folderId}' in parents and ${tagQuery('main')} and trashed=false`);
+  // Drive's search can take a few seconds to list a file that was just made: look it up directly too.
+  if(drive.mainId && !list.some(f=> f.id===drive.mainId)){
     try{
       const m = await driveGetMeta(drive.mainId);
-      if(!m.trashed && (m.parents||[]).includes(drive.folderId)) return m;
+      if(!m.trashed && (m.parents||[]).includes(drive.folderId) && (m.appProperties||{}).rangebook==='main') list.push(m);
     }catch(e){ if(e.code!=='notfound') throw e; }
   }
-  const list = await driveList(`'${drive.folderId}' in parents and ${tagQuery('main')} and trashed=false`);
-  list.sort((a, b)=> String(b.modifiedTime).localeCompare(String(a.modifiedTime)));
-  const m = list[0] || null;
-  drive.mainId = m ? m.id : '';
+  list.sort((a, b)=> String(a.createdTime||'').localeCompare(String(b.createdTime||'')) || String(a.id).localeCompare(String(b.id)));
+  const main = list[0] || null;
+  drive.mainId = main ? main.id : '';
   saveDriveCfg();
-  return m;
+  return { main, extras: list.slice(1) };
+}
+async function findMainFile(){ return (await findMainFiles()).main; }
+// Fold a second main backup file into the records here. It goes to the bin once the merged copy is in Drive.
+async function mergeExtraFile(f){
+  const other = fillDoc(await driveDownload(f.id));
+  if(saveTimer) await flushSave(); else stampChanges();
+  const r = mergeDocs(buildDoc(), other);
+  applyDoc(r.doc);
+  try{ await writeLocalDoc(); localSaveFailed = false; }catch(e){ localSaveFailed = true; }
+  render();
+  if(r.incoming) toast(`Found a second backup file in the Google Drive folder (saved ${fmtWhen(fileSavedAt(f))} on ${(f.appProperties||{}).device || 'another computer'}) and combined it: ${r.incoming} record${r.incoming===1?'':'s'} added. Nothing was lost.`, 7000);
 }
 // "My Drive › Ranch › Backups" for a folder id.
 async function folderTrail(id){
@@ -1404,11 +1476,16 @@ function syncNow(reason, opts){
   clearTimeout(retryTimer);
   syncRun = (async ()=>{
     try{
-      do{
-        syncQueued = false;
-        const force = syncForce; syncForce = false;
-        await syncOnce(force);
-      } while(syncQueued);
+      // One tab at a time on this computer: tabs share the saved records and the sync book-keeping.
+      await withSyncLock(async ()=>{
+        do{
+          syncQueued = false;
+          const force = syncForce; syncForce = false;
+          reloadDriveSyncFields();
+          await takeOtherTabsChanges();
+          await syncOnce(force);
+        } while(syncQueued);
+      });
       driveState = 'ok'; driveProblem = '';
     }catch(e){ handleSyncError(e); }
     finally{
@@ -1425,11 +1502,12 @@ async function syncOnce(force){
   if(saveTimer) await flushSave(); else stampChanges();
   driveState = 'busy'; refreshBadge();
   clearTimeout(backupTimer); backupTimer = null;
-  const main = await findMainFile();
+  const { main, extras } = await findMainFiles();
+  for(const f of extras) await mergeExtraFile(f);
   const remoteChanged = !!main && main.modifiedTime !== drive.lastRemote;
-  let needUpload = force || localChangedSinceSync() || (!main && hasData());
-  if(main && remoteChanged) needUpload = (await bringInRemote(main)) || force;
-  if(needUpload && (drive.auto || force)) await uploadBackup();
+  let needUpload = force || localChangedSinceSync() || (!main && hasData()) || extras.length > 0;
+  if(main && remoteChanged) needUpload = (await bringInRemote(main)) || force || extras.length > 0;
+  if(needUpload && (drive.auto || force)) await uploadBackup(extras);
   if(localChangedSinceSync()) scheduleBackup();
 }
 /* Bring in the Drive backup. It is always merged record by record rather than loaded over the top:
@@ -1440,18 +1518,15 @@ async function bringInRemote(main){
   const remote = fillDoc(await driveDownload(main.id));
   if(saveTimer) await flushSave(); else stampChanges();
   const localChanged = localChangedSinceSync();
-  // Another computer restored a backup and nothing here is waiting to back up: take it as it is
-  // (this also covers computers whose clocks disagree).
-  const r = !localChanged && remote.replacedAt && remote.replacedAt > (docMeta.replacedAt || '')
-    ? { doc: Object.assign({}, remote, { log: mergeLogs(docMeta.log, remote.log) }), incoming: 0, replaced: true }
-    : mergeDocs(buildDoc(), remote);
+  const r = mergeDocs(buildDoc(), remote);
   const needsUpload = countDiff(remote, r.doc) > 0;
   applyDoc(r.doc);
+  remoteCache = { id: main.id, modifiedTime: main.modifiedTime, doc: remote };
   let note = '';
   if(localChanged || needsUpload){
     const when = fmtWhen(fileSavedAt(main));
     const from = (main.appProperties||{}).device || 'another computer';
-    if(r.replaced) note = `The backup saved ${when} on ${from} replaced all records (a restore), so this computer now matches it.`;
+    if(r.replaced) note = `${from} restored a backup (${when}), so this computer now has the restored records too.`;
     else if(r.incoming) note = `Combined with the backup saved ${when} on ${from}: ${r.incoming} record${r.incoming===1?'':'s'} with changes from the other computer added. Nothing was lost.`;
   }
   drive.lastRemote = main.modifiedTime;
@@ -1462,26 +1537,57 @@ async function bringInRemote(main){
   if(note) toast(note, 7000);
   return needsUpload;
 }
-async function uploadBackup(){
+/* What the Drive backup held when this computer last read or wrote it. Before any upload the app
+   makes sure it has merged the file's actual contents, not just compared its time. */
+var remoteCache = null;
+// Records the backup has that this upload would drop. Only a delete (a tombstone, which restores
+// and resets also leave) may remove a record; anything else means something went wrong, so the upload stops.
+function droppedRecords(doc, remote){
+  if(!remote) return 0;
+  let n = 0;
+  ALL_COLS.forEach(col=>{
+    const keep = new Set((doc[col]||[]).map(r=> colKey(col, r)));
+    const tombs = (doc.tombs||{})[col] || {};
+    (remote[col]||[]).forEach(r=>{ const k = colKey(col, r); if(k && !keep.has(k) && !tombs[k]) n++; });
+  });
+  return n;
+}
+async function uploadBackup(extras){
+  extras = (extras || []).slice();
   for(let round = 0; round < 3; round++){
     stampChanges();
-    const main = await findMainFile();
-    if(main && main.modifiedTime !== drive.lastRemote){
+    const found = await findMainFiles();
+    for(const f of found.extras) if(!extras.some(x=> x.id===f.id)){ await mergeExtraFile(f); extras.push(f); }
+    const main = found.main;
+    if(main && (main.modifiedTime !== drive.lastRemote || !remoteCache || remoteCache.id!==main.id || remoteCache.modifiedTime!==main.modifiedTime)){
       const still = await bringInRemote(main);
-      if(!still && round > 0) return;     // the other computer's backup already has everything
+      if(!still && round > 0 && !extras.length) return;     // the other computer's backup already has everything
     }
     if(main && !hasData()) return;        // never upload an empty set over a real backup
     const doc = buildDoc();
+    const dropped = main ? droppedRecords(doc, remoteCache && remoteCache.doc) : 0;
+    if(dropped) throw driveErr('unsafe', dropped + ' records would have been removed');
     const { bytes, mime } = await backupBytes(doc);
+    // The file must read back as the same records before it goes to Drive.
+    const check = fillDoc(await parseBackupBytes(bytes));
+    if(!check || ALL_COLS.some(col=> (check[col]||[]).length !== (doc[col]||[]).length)) throw driveErr('unsafe', 'backup did not read back');
     const meta = { name: mainFileName(), mimeType: mime, appProperties: { rangebook:'main', savedAt: doc.savedAt, device: DEVICE_NAME, name: backupName() } };
     if(!main) meta.parents = [drive.folderId];
+    const t0 = Date.now();
     const up = await driveUpload(main ? main.id : '', meta, bytes, mime);
+    const t1 = Date.now();
+    if(up.size && Number(up.size) !== bytes.length) throw driveErr('http', 'upload incomplete');
+    if(t1 - t0 < 15000 && up.modifiedTime) drive.clockOffset = Math.round(Date.parse(up.modifiedTime) - (t0 + t1) / 2);
     drive.mainId = up.id; drive.lastRemote = up.modifiedTime; drive.lastLocal = doc.savedAt;
     drive.lastBackupAt = new Date().toISOString(); drive.lastSize = bytes.length;
     saveDriveCfg();
+    remoteCache = { id: up.id, modifiedTime: up.modifiedTime, doc: check };
+    // The merged copy is safely in Drive: second main files go to the bin.
+    for(const f of extras){ try{ await driveTrash(f.id); }catch(e){} }
+    extras = [];
     try{ await makeDailyCopy(doc, bytes, mime); }catch(e){}
-    const check = await driveGetMeta(up.id, 'id,modifiedTime');
-    if(check.modifiedTime === up.modifiedTime) return;
+    const after = await driveGetMeta(up.id, 'id,modifiedTime');
+    if(after.modifiedTime === up.modifiedTime) return;
     // Another computer backed up at the same moment: merge its copy and go again.
   }
 }
@@ -1517,6 +1623,7 @@ function handleSyncError(e){
     ? "Range Book can't open the Google Drive folder. It may have been moved, deleted or unshared. Choose the folder again in Settings → Manage Data."
     : code==='bad-file' ? "The backup file in Google Drive couldn't be read. Restore a daily copy in Settings → Manage Data."
     : code==='old-browser' ? 'This browser is too old to read the backup. Update it, or use Chrome, Edge, Safari or Firefox.'
+    : code==='unsafe' ? "Range Book stopped a backup that didn't look right, so Google Drive wasn't changed. Your records are safe on this computer. It will try again in a minute; if this keeps showing, download a backup file."
     : "Couldn't reach Google Drive just now. Your changes are saved on this computer and will back up when it can.";
   retryTimer = setTimeout(()=> syncNow('retry'), 60000);
 }
@@ -3464,7 +3571,55 @@ function drivePanelHtml(){
         <p class="hint" style="margin:8px 0 0;">The first time you sign in, Google shows a warning that it hasn't verified the app. That's expected for your own app: choose <b>Continue</b>.</p>
       </details>
     </div>
+    ${auditLogHtml()}
     ${backupSectionHtml()}`;
+}
+/* ---------- Change log (audit) ----------
+   Every add, change, delete and restore, newest first, from every computer sharing the herd.
+   It travels in the backups, so each computer shows the same history. */
+var auditView = { q:'', limit:50 };
+var AUDIT_ACTIONS = { added:'Added', changed:'Changed', deleted:'Deleted', restored:'Restored' };
+function auditEntries(){
+  const q = auditView.q.trim().toLowerCase();
+  const list = (docMeta.log || []).slice().reverse();
+  if(!q) return list;
+  return list.filter(e=> [AUDIT_ACTIONS[e.action] || e.action, e.what, e.label, e.device, e.by, fmtWhen(e.at)].join(' ').toLowerCase().includes(q));
+}
+function auditLogHtml(){
+  return `<div class="field" style="${BOX}">
+    <label style="margin-bottom:6px;">Change log</label>
+    <p class="hint" style="margin:0 0 8px;">Every record added, changed or deleted, and every restore, with when, which computer and which Google account. Newest first. Every computer that shares this herd shows the same log.</p>
+    <div style="display:flex; gap:8px; margin-bottom:8px; flex-wrap:wrap;">
+      <input type="text" id="audit-search" style="flex:1; min-width:180px;" placeholder="Search: animal, change, computer, person…" value="${escapeHtml(auditView.q)}" oninput="auditSearch(this.value)">
+      <button type="button" class="btn ghost sm" onclick="downloadAuditCsv()">⬇ Download log (CSV)</button>
+    </div>
+    <div id="audit-list">${auditListHtml()}</div>
+  </div>`;
+}
+function auditListHtml(){
+  const all = auditEntries();
+  if(!all.length) return `<p class="hint" style="margin:0;">${auditView.q ? 'Nothing in the log matches that search.' : 'No changes logged yet.'}</p>`;
+  const rows = all.slice(0, auditView.limit).map(e=> `<div class="audit-row">
+      <span class="audit-act ${escapeHtml(e.action)}">${escapeHtml(AUDIT_ACTIONS[e.action] || e.action)}</span>
+      <span class="audit-main"><b>${escapeHtml(e.label || '')}</b>${e.what && e.action!=='restored' ? ` <span class="hint">${escapeHtml(e.what)}</span>` : ''}
+        <span class="audit-meta">${escapeHtml(fmtWhen(e.at))} · ${escapeHtml(e.device || 'Unknown computer')}${e.by ? ' · ' + escapeHtml(e.by) : ''}</span></span>
+    </div>`).join('');
+  const more = all.length > auditView.limit
+    ? `<button type="button" class="btn ghost sm" style="margin-top:8px;" onclick="auditView.limit += 100; refreshAuditList();">Show more (${all.length - auditView.limit} older)</button>` : '';
+  return `<div class="audit-list">${rows}</div>${more}`;
+}
+function refreshAuditList(){ const el = document.getElementById('audit-list'); if(el) el.innerHTML = auditListHtml(); }
+function auditSearch(q){ auditView.q = q; auditView.limit = 50; refreshAuditList(); }
+function downloadAuditCsv(){
+  const cell = v=> '"' + String(v==null ? '' : v).replace(/"/g, '""') + '"';
+  const lines = [['When','Change','Record type','Record','Computer','Google account'].map(cell).join(',')]
+    .concat(auditEntries().map(e=> [new Date(e.at).toLocaleString(), AUDIT_ACTIONS[e.action] || e.action, e.what, e.label, e.device, e.by].map(cell).join(',')));
+  const blob = new Blob([lines.join('\r\n')], { type:'text/csv' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = `Range Book change log - ${localDay()}.csv`;
+  document.body.appendChild(a); a.click(); document.body.removeChild(a);
+  setTimeout(()=> URL.revokeObjectURL(a.href), 1000);
 }
 function driveBrowserHtml(){
   const u = driveUi;
@@ -3682,7 +3837,7 @@ async function restoreFromDrive(fileId){
    version instead of merging the old records back in. The change log is kept and the backup's added to it. */
 async function restoreDoc(incoming, label){
   if(saveTimer) await flushSave(); else stampChanges();
-  const now = new Date().toISOString();
+  const now = nowIso();
   const cur = buildDoc();
   if(driveSetUp() && !isOffline()){
     // Keep what was here as a copy in the folder first, in case the restore was a mistake.
@@ -3697,9 +3852,11 @@ async function restoreDoc(incoming, label){
   ALL_COLS.forEach(col=>{
     const keep = new Set(next[col].map(r=> colKey(col, r)));
     (cur[col]||[]).forEach(r=>{ const k = colKey(col, r); if(k && !keep.has(k)) next.tombs[col][k] = now; });
+    // The restored version of each record is the newest one now, so it wins on every computer.
+    next[col].forEach(r=>{ const k = colKey(col, r); if(!k) return; if(RECORD_COLS.includes(col)) r.updated = now; else next.stamps[col][k] = now; delete next.tombs[col][k]; });
   });
   next.log = mergeLogs(cur.log, next.log);
-  next.log.push({ id: uid(), at: now, device: DEVICE_NAME, action:'restored', col:'', key:'', what:'backup', label: 'Restored ' + label });
+  next.log.push({ id: uid(), at: now, device: DEVICE_NAME, by: drive.account || '', action:'restored', col:'', key:'', what:'backup', label: 'Restored ' + label });
   next.savedAt = now; next.replacedAt = now;
   applyDoc(next);
   try{ await writeLocalDoc(); localSaveFailed = false; }catch(e){ localSaveFailed = true; }
@@ -3785,7 +3942,7 @@ async function applyImport(mode){
     if(saveTimer) await flushSave(); else stampChanges();
     const r = mergeDocs(buildDoc(), incoming);
     applyDoc(r.doc);
-    docMeta.savedAt = new Date().toISOString();
+    docMeta.savedAt = nowIso();
     logChange('added', 'animals', 'import:' + docMeta.savedAt, 'Added records from a backup file', docMeta.savedAt);
     try{ await writeLocalDoc(); localSaveFailed = false; }catch(e){ localSaveFailed = true; }
     render();
@@ -3953,7 +4110,7 @@ function performReset(){
   state.vaccines = [];
   selectedAnimalIds.clear();
   // A reset replaces everything on purpose, so the other computers take the empty herd too.
-  docMeta.replacedAt = new Date().toISOString();
+  docMeta.replacedAt = nowIso();
   saveState();
   closeModal();
   currentTab = 'dashboard';
