@@ -28,6 +28,8 @@
 })();
 </script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<!-- Site settings shared by every computer (the Google Client ID for Drive backup). -->
+<script src="config.js"></script>
 <style>
   :root{
     --bg: #E4DBC2;
@@ -106,8 +108,10 @@
   /* ---------- Layout ---------- */
   #app{max-width:1180px; margin:0 auto; padding:0 20px 80px;}
 
-  .sync-banner{ display:flex; align-items:center; gap:12px; justify-content:space-between; flex-wrap:wrap; margin:0 0 14px; padding:10px 14px; border-radius:var(--radius); background:#F6DCCF; border:1px solid #C9764F; color:#6A2A12; font-size:13.5px; font-weight:600; line-height:1.4; }
-  .sync-banner[hidden]{ display:none; }
+  /* Bottom banner when the Google Drive sign-in needs a click to finish. */
+  .signin-banner{ position:fixed; left:12px; right:12px; bottom:12px; z-index:60; max-width:760px; margin:0 auto; display:flex; align-items:center; gap:12px; justify-content:space-between; flex-wrap:wrap; padding:10px 14px; border-radius:var(--radius); background:#FBEFD6; border:1px solid #C98A2E; color:#5A3A0C; font-size:13px; font-weight:600; line-height:1.4; box-shadow:var(--shadow-lg); }
+  .signin-banner[hidden]{ display:none; }
+  .signin-banner .sb-actions{ display:flex; gap:8px; }
   .topbar{
     display:flex; align-items:center; justify-content:space-between;
     padding:26px 0 18px;
@@ -284,10 +288,6 @@
   .calf-meta{ font-size:11.5px; color:var(--ink-soft); }
   .no-calf{ font-size:12.5px; color:var(--ink-faint); font-style:italic; padding-left:16px; }
   .calf-row .btn{ flex-shrink:0; }
-  .conn-btn .conn-badge{ position:absolute; right:-3px; bottom:-3px; min-width:17px; height:17px; padding:0 4px; border-radius:9px; font-size:10.5px; font-weight:800; line-height:14px; text-align:center; color:#fff; border:1.5px solid #F6E7C8; pointer-events:none; }
-  .conn-btn .conn-badge.ok{ background:var(--pasture); }
-  .conn-btn .conn-badge.waiting{ background:var(--danger); }
-  .conn-btn .conn-badge:empty{ display:none; }
   .offspring-table{ width:100%; border-collapse:collapse; font-size:12.5px; }
   .offspring-table th{ text-align:left; font-size:10.5px; text-transform:uppercase; letter-spacing:.05em; color:var(--ink-soft); padding:4px 6px; border-bottom:1px solid var(--line); }
   .offspring-table td{ padding:6px; border-bottom:1px solid var(--line-soft); font-family:'JetBrains Mono', monospace; }
@@ -539,23 +539,49 @@
     position:relative;
   }
   .icon-btn:hover{ background:var(--surface-2); transform:translateY(-1px); }
-  .icon-btn .drive-dot{
-    position:absolute; top:5px; right:5px;
-    width:8px; height:8px; border-radius:50%;
-    background:var(--ink-faint); border:1.5px solid var(--surface);
-  }
-  .icon-btn .drive-dot.connected{ background:var(--pasture); }
-  .icon-btn .drive-dot.error{ background:var(--danger); }
-  .icon-btn .sync-wire{ transition:transform .3s ease; }
-  .icon-btn.busy .sync-wire{ animation:sync-spin 1.1s linear infinite; }
+  /* "Is my data safe?" badge in the top bar. */
+  .safe-badge{ display:inline-flex; align-items:center; gap:6px; height:40px; padding:0 12px 0 10px; border-radius:20px; border:1px solid var(--line);
+    background:var(--surface); color:var(--ink); font:inherit; font-size:12.5px; font-weight:700; cursor:pointer; white-space:nowrap; max-width:200px; transition:transform .12s ease; }
+  .safe-badge:hover{ transform:translateY(-1px); }
+  .safe-badge .sb-icon{ display:inline-flex; flex-shrink:0; }
+  .safe-badge .sb-text{ overflow:hidden; text-overflow:ellipsis; }
+  .safe-badge.ok .sb-icon{ color:#2F7A3A; }
+  .safe-badge.busy .sb-icon{ color:#2B67B5; }
+  .safe-badge.warn .sb-icon{ color:#B7791F; }
+  .safe-badge.bad{ background:#A5301E; border-color:#7E2215; color:#fff; }
+  .safe-badge.bad .sb-icon{ color:#fff; }
+  .sb-spin{ animation:sync-spin 1.1s linear infinite; }
   @keyframes sync-spin{ to{ transform:rotate(360deg); } }
-  .icon-btn .sync-check{
-    position:absolute; right:-3px; bottom:-3px; width:17px; height:17px; border-radius:50%;
-    background:var(--pasture); color:#fff; font-size:11px; font-weight:800; line-height:17px; text-align:center;
-    border:1.5px solid #F6E7C8; opacity:0; transform:scale(.4); transition:opacity .2s ease, transform .2s ease; pointer-events:none;
-  }
-  .icon-btn .sync-check.show{ opacity:1; transform:scale(1); }
-  @media (prefers-reduced-motion: reduce){ .icon-btn.busy .sync-wire{ animation-duration:3s; } }
+  @media (prefers-reduced-motion: reduce){ .sb-spin{ animation-duration:3s; } }
+  @media (max-width:420px){ .safe-badge{ max-width:150px; padding:0 10px 0 8px; font-size:12px; } }
+  .safety-status{ display:flex; flex-direction:column; gap:3px; padding:10px 12px; border-radius:var(--radius); border-left:4px solid; font-size:13px; line-height:1.45; }
+  .safety-status strong{ font-size:14px; }
+  .safety-status.ok{ background:#E5F0DD; border-color:#2F7A3A; }
+  .safety-status.busy{ background:#E1EBF7; border-color:#2B67B5; }
+  .safety-status.warn{ background:#FBEFD6; border-color:#B7791F; }
+  .safety-status.bad{ background:#F6DCCF; border-color:#A5301E; }
+  .safety-rows{ margin-top:14px; display:flex; flex-direction:column; }
+  .safety-row{ display:flex; justify-content:space-between; gap:12px; padding:8px 0; border-bottom:1px solid var(--line-soft); font-size:13px; }
+  .safety-row span{ color:var(--ink-soft); }
+  .safety-row b{ text-align:right; overflow-wrap:anywhere; }
+  .check-row{ display:flex !important; align-items:center; gap:8px; font-size:13px !important; font-weight:500 !important; text-transform:none !important; letter-spacing:0 !important; color:var(--ink) !important; margin:4px 0 !important; cursor:pointer; }
+  .check-row input{ width:auto; margin:0; }
+  /* Google Drive folder browser, found backups and restore list (Settings → Manage Data). */
+  .drive-browser{ border:1px solid var(--line-soft); border-radius:var(--radius); margin-top:10px; background:var(--surface); overflow:hidden; }
+  .drive-browser .db-head{ padding:8px 10px; border-bottom:1px solid var(--line-soft); background:var(--surface-2); font-size:13px; }
+  .drive-browser .db-crumbs{ display:flex; flex-wrap:wrap; align-items:center; gap:2px; }
+  .drive-browser .db-crumb{ border:0; background:none; padding:2px 4px; font:inherit; font-size:13px; font-weight:600; color:var(--rust); cursor:pointer; }
+  .drive-browser .db-sep{ color:var(--ink-faint); }
+  .drive-browser .db-list{ max-height:260px; overflow:auto; }
+  .drive-browser .db-row{ display:flex; align-items:center; justify-content:space-between; gap:10px; width:100%; text-align:left; padding:9px 12px; border:0; border-bottom:1px solid var(--line-soft); background:none; font:inherit; font-size:13px; color:var(--ink); }
+  .drive-browser button.db-row{ cursor:pointer; }
+  .drive-browser button.db-row:hover{ background:var(--surface-2); }
+  .drive-browser .db-row .hint{ font-size:11.5px; }
+  .drive-browser .db-confirm{ flex-wrap:wrap; background:#FBEFD6; }
+  .drive-browser .db-open{ color:var(--ink-soft); font-size:12px; flex-shrink:0; }
+  .drive-browser .db-foot{ display:flex; flex-wrap:wrap; gap:8px; align-items:center; padding:8px 10px; background:var(--surface-2); }
+  .drive-browser .db-new{ display:flex; gap:6px; flex:1; min-width:200px; }
+  .drive-browser .db-new input{ flex:1; min-width:0; font-size:12.5px; }
 
   .hold-reset-btn{
     position:relative; overflow:hidden; width:100%; padding:14px 16px;
@@ -576,6 +602,7 @@
   .toast{
     background:var(--ink); color:var(--white); padding:10px 18px; border-radius:20px;
     font-size:13px; font-weight:600; box-shadow:var(--shadow-lg); animation:toastIn .15s ease;
+    max-width:min(92vw, 560px); text-align:center; line-height:1.4;
   }
   .toast.toast-action{ display:flex; align-items:center; gap:14px; padding:8px 8px 8px 18px; }
   .toast.toast-action button{ background:var(--brass-light, #E2B65C); color:#2E1D10; border:0; border-radius:14px; padding:6px 14px; font:inherit; font-weight:800; cursor:pointer; }
@@ -641,7 +668,7 @@
   .topbar .search-input{ background: #FBF3E1; border-color: var(--brass); }
   .icon-btn{ background: #F6E7C8; border-color: var(--brass); color: var(--leather); }
   .icon-btn:hover{ background: #FFF6E2; }
-  .icon-btn .drive-dot{ border-color: #F6E7C8; }
+  .safe-badge{ background: #F6E7C8; border-color: var(--brass); color: var(--leather); }
 
   /* Tabs: brass underline on the active one, rope rule under the row */
   /* Page buttons sit inside a framed bar so they read as buttons. */
@@ -748,27 +775,7 @@
       <div id="global-search-results" class="global-search-results" style="display:none;"></div>
     </div>
     <div style="display:flex; gap:10px;">
-      <button class="icon-btn conn-btn" id="conn-btn" onclick="showConnectionStatus()" title="Online" aria-label="Connection status">
-        <span id="conn-icon" style="display:inline-flex;"></span>
-        <span class="conn-badge" id="conn-badge"></span>
-      </button>
-      <button class="icon-btn" id="drive-btn" onclick="syncButtonClick()" title="Back up now" aria-label="Back up now">
-        <!-- Barbed-wire sync loop: spins while syncing or backing up -->
-        <svg class="sync-wire" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-          <path d="M20 12a8 8 0 0 0-14.3-4.9"></path>
-          <path d="M4 12a8 8 0 0 0 14.3 4.9"></path>
-          <path d="M5.2 3.6v3.9h3.9"></path>
-          <path d="M18.8 20.4v-3.9h-3.9"></path>
-          <path d="M16.6 5.1l2.1 2.1M18.7 5.1l-2.1 2.1" stroke-width="1.3"></path>
-          <path d="M10.9 2.9l2.2 2.2M13.1 2.9l-2.2 2.2" stroke-width="1.3"></path>
-          <path d="M5.3 16.8l2.1 2.1M7.4 16.8l-2.1 2.1" stroke-width="1.3"></path>
-          <path d="M10.9 18.9l2.2 2.2M13.1 18.9l-2.2 2.2" stroke-width="1.3"></path>
-          <path d="M19.4 10.9l1.2 2.2M20.6 10.9l-1.2 2.2" stroke-width="1.2"></path>
-          <path d="M3.4 10.9l1.2 2.2M4.6 10.9l-1.2 2.2" stroke-width="1.2"></path>
-        </svg>
-        <span class="drive-dot" id="drive-dot"></span>
-        <span class="sync-check" id="sync-check" aria-hidden="true">✓</span>
-      </button>
+      <button type="button" class="safe-badge warn" id="safe-badge" onclick="openSafetyDetails()" aria-label="Is my data safe? Tap for details"><span class="sb-icon"></span><span class="sb-text">Saving…</span></button>
       <button class="icon-btn" id="settings-btn" onclick="openSettingsModal()" title="Settings" aria-label="Settings">
         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
           <circle cx="12" cy="12" r="3"></circle>
@@ -778,13 +785,13 @@
     </div>
   </div>
 
-  <div id="sync-banner" class="sync-banner" role="alert" hidden></div>
   <nav class="tabs" id="tabs"></nav>
   <main id="view-root"><div class="cow-loader" role="status" aria-label="Loading herd data"><svg viewBox="0 0 120 84" width="120" height="84" aria-hidden="true"><g class="cow-ground"><path d="M0 72H14M26 72H40M52 72H66M78 72H92M104 72H118M130 72H144"/></g><g class="cow-body"><path class="cow-tail" d="M24 30C16 30 12 36 12 46"/><circle class="cow-tuft" cx="12" cy="48" r="3"/><g class="cow-leg cow-leg-b"><rect x="32" y="44" width="7" height="26" rx="3"/></g><g class="cow-leg cow-leg-a"><rect x="66" y="44" width="7" height="26" rx="3"/></g><rect x="22" y="22" width="64" height="30" rx="14"/><ellipse class="cow-spot" cx="40" cy="32" rx="9" ry="6"/><ellipse class="cow-spot" cx="64" cy="40" rx="6" ry="4"/><g class="cow-leg cow-leg-a"><rect x="26" y="44" width="7" height="26" rx="3"/></g><g class="cow-leg cow-leg-b"><rect x="74" y="44" width="7" height="26" rx="3"/></g><path class="cow-horn" d="M86 14Q84 6 90 4M98 14Q100 6 94 4"/><rect x="80" y="12" width="24" height="22" rx="9"/><ellipse cx="80" cy="16" rx="6" ry="3"/><ellipse cx="104" cy="16" rx="6" ry="3"/><rect class="cow-snout" x="92" y="24" width="16" height="12" rx="6"/><circle class="cow-eye" cx="96" cy="20" r="1.8"/></g></svg></div></main>
 </div>
 
 <div id="modal-root"></div>
 <div id="drawer-root"></div>
+<div id="signin-banner" class="signin-banner" role="alert" hidden></div>
 <div id="toast-wrap"></div>
 
 <script>
@@ -822,178 +829,28 @@ function currentPairs(){
 
 /* =========================================================
    STORAGE
+   Records live in this browser's IndexedDB (localStorage only if IndexedDB fails).
+   The Google Drive backup (below) is a copy of that, not the only place the data lives.
+   Every animal, health event, reproduction record and pasture carries its own `updated`
+   time; breeds, vaccines and tag colours keep theirs in `stamps`. Deleted records are
+   remembered as tombstones (`tombs`), so a merge never brings a deleted record back.
 ========================================================= */
-var hasAppStorage = typeof window!=='undefined' && !!window.storage && typeof window.storage.get==='function';
+var RECORD_COLS = ['animals','events','breeding','pastures'];
+var LIST_COLS = ['breeds','vaccines','tagColors'];
+var ALL_COLS = RECORD_COLS.concat(LIST_COLS);
+var COL_KEYS = {
+  animals: r=>r.id, events: r=>r.id, breeding: r=>r.id, pastures: r=>r.id,
+  breeds: r=>String(r.name||'').trim().toLowerCase(), vaccines: r=>String(r).trim().toLowerCase(),
+  tagColors: r=>String(r.letter||'').trim().toUpperCase(),
+};
+var COL_WORDS = { animals:'animal', events:'health event', breeding:'reproduction record', pastures:'pasture', breeds:'breed', vaccines:'vaccine', tagColors:'tag colour' };
+// Records saved before time stamps existed count as older than any edit.
+var OLD_STAMP = '2000-01-01T00:00:00.000Z';
+var LOG_MAX = 3000;
+// What travels with the records in every backup: when anything last changed, when the whole
+// set was deliberately replaced (a restore or reset), tombstones, list stamps and the change log.
+var docMeta = { savedAt:'', replacedAt:'', tombs:{}, stamps:{}, log:[], settings:{} };
 
-function loadDriveConfig(){
-  try{
-    const raw = localStorage.getItem('herd-drive-config');
-    return raw ? JSON.parse(raw) : { url:'', secret:'' };
-  }catch(e){ return { url:'', secret:'' }; }
-}
-function persistDriveConfig(cfg){
-  driveConfig = cfg;
-  driveScriptVersion = null;
-  try{ localStorage.setItem('herd-drive-config', JSON.stringify(cfg)); }catch(e){}
-}
-var driveConfig = loadDriveConfig();
-var driveStatus = 'idle'; // idle | connected | error | syncing
-var driveLastSync = null;
-
-// Scripts older than version 3 don't know about tag colours and drop them when merging.
-// Until the script is updated, each device keeps its own tag colours instead of losing them.
-function keepLocalOnlyData(mergedJson, local){
-  if(driveScriptVersion===null || driveScriptVersion >= 3 || driveScriptVersion === 1) return mergedJson;
-  const m = JSON.parse(mergedJson);
-  if(!(m.tagColors && m.tagColors.length) && local.tagColors && local.tagColors.length){ m.tagColors = local.tagColors; return JSON.stringify(m); }
-  return mergedJson;
-}
-function driveError(code, msg){ const e = new Error(msg || code); e.code = code; return e; }
-
-/* When the app is served by the Workspace script (HtmlService), Google provides
-   google.script.run: calls go straight to that script as the signed-in user,
-   with no web-app URL or secret involved. */
-var hostedInWorkspace = typeof google!=='undefined' && !!(google.script && google.script.run);
-function gasCall(fn, ...args){
-  return new Promise((resolve, reject)=>{
-    google.script.run.withSuccessHandler(resolve).withFailureHandler(err=>reject(driveError('script', err && err.message)))[fn](...args);
-  });
-}
-function driveEnabled(){ return hostedInWorkspace || !!(driveConfig && driveConfig.url); }
-
-// Version 6+ scripts stamp every save of the Drive file (rev, when, who), so a device can tell
-// whether it already has the latest herd.
-var driveRemote = null;
-function noteDriveRev(r){ if(r && r.rev) driveRemote = { rev:r.rev, savedAt:r.savedAt||'', savedBy:r.savedBy||'', animals:r.animals }; }
-async function driveFetchState(){
-  if(hostedInWorkspace && driveScriptVersion >= 6){
-    const r = await gasCall('rbLoadRev');
-    noteDriveRev(r);
-    return JSON.parse((r && r.data) || '{}');
-  }
-  if(hostedInWorkspace) return JSON.parse((await gasCall('rbLoad')) || '{}');
-  const sep = driveConfig.url.includes('?') ? '&' : '?';
-  let res;
-  // A web app that isn't shared with "Anyone" answers with a Google sign-in page, which the browser blocks as a network error.
-  try{ res = await fetch(driveConfig.url + sep + 'secret=' + encodeURIComponent(driveConfig.secret||'')); }
-  catch(e){ throw driveError('blocked', e.message); }
-  if(!res.ok) throw driveError(res.status===404 ? 'not-found' : 'http', 'HTTP '+res.status);
-  const text = await res.text();
-  if(!text) return null;
-  let parsed;
-  try{ parsed = JSON.parse(text); }catch(e){ throw driveError('blocked', 'not JSON'); }
-  if(parsed && parsed.error) throw driveError(parsed.error==='unauthorized' ? 'unauthorized' : 'script', parsed.error);
-  return parsed;
-}
-// Version 2+ scripts merge saves on Google's side under a lock; older ones just overwrite.
-var driveScriptVersion = null;
-async function driveCheckVersion(){
-  if(hostedInWorkspace){
-    try{ const info = await gasCall('rbInfo'); driveScriptVersion = (info && info.version) || 2; }
-    catch(e){ driveScriptVersion = 2; }
-    return driveScriptVersion;
-  }
-  try{
-    const sep = driveConfig.url.includes('?') ? '&' : '?';
-    const res = await fetch(driveConfig.url + sep + 'ping=1&secret=' + encodeURIComponent(driveConfig.secret||''));
-    const parsed = JSON.parse(await res.text());
-    driveScriptVersion = (parsed && typeof parsed.rangebook==='number') ? parsed.rangebook : 1;
-  }catch(e){ driveScriptVersion = null; }
-  return driveScriptVersion;
-}
-async function driveMergeSave(localJson, baseJson){
-  if(hostedInWorkspace && driveScriptVersion >= 6){
-    const r = await gasCall('rbSync', localJson, baseJson);
-    noteDriveRev(r);
-    return r.data;
-  }
-  if(hostedInWorkspace) return gasCall('rbSave', localJson, baseJson);
-  const res = await fetch(driveConfig.url, {
-    method:'POST',
-    headers:{ 'Content-Type':'text/plain;charset=utf-8' },
-    body: JSON.stringify({ secret: driveConfig.secret||'', data: localJson, base: baseJson })
-  });
-  if(!res.ok) throw new Error('HTTP '+res.status);
-  const parsed = JSON.parse(await res.text());
-  if(!parsed || parsed.error || typeof parsed.merged!=='string') throw new Error((parsed && parsed.error) || 'merge failed');
-  return parsed.merged;
-}
-async function driveSaveState(data){
-  const res = await fetch(driveConfig.url, {
-    method:'POST',
-    headers:{ 'Content-Type':'text/plain;charset=utf-8' },
-    body: JSON.stringify({ secret: driveConfig.secret||'', data: JSON.stringify(data || state) })
-  });
-  if(!res.ok) throw new Error('HTTP '+res.status);
-  const text = await res.text();
-  const parsed = JSON.parse(text);
-  if(parsed && parsed.error) throw new Error(parsed.error);
-}
-/* The barbed-wire sync button spins while a sync or backup is running, and flashes a check when a backup finishes. */
-var driveBusyCount = 0, syncCheckTimer = null;
-function setDriveBusy(on){
-  driveBusyCount = Math.max(0, driveBusyCount + (on ? 1 : -1));
-  const btn = document.getElementById('drive-btn');
-  if(btn) btn.classList.toggle('busy', driveBusyCount > 0);
-}
-function flashSyncCheck(title){
-  const el = document.getElementById('sync-check'), btn = document.getElementById('drive-btn');
-  if(!el) return;
-  el.classList.add('show');
-  if(btn && title) btn.title = title;
-  clearTimeout(syncCheckTimer);
-  syncCheckTimer = setTimeout(()=> el.classList.remove('show'), 4000);
-}
-// Connection circle next to the sync button: an intact fence when online (green ✓),
-// a broken fence when offline (red count of changes waiting on this phone).
-var FENCE_OK = '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 5v15M12 5v15M20 5v15"/><path d="M4 9h16M4 15h16"/><path d="M3 5l1-1.5L5 5M11 5l1-1.5L13 5M19 5l1-1.5L21 5"/></svg>';
-var FENCE_BROKEN = '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 5v15M20 5v15"/><path d="M3 5l1-1.5L5 5M19 5l1-1.5L21 5"/><path d="M4 9h5.5l1.2 1.4M20 9h-5l-1.6 2.2"/><path d="M4 15h4.5l1.6 2.4M20 15h-5.5l-1 1.8"/><path d="M12.2 7.5v9" stroke-dasharray="2 2.2"/></svg>';
-function connectionText(){
-  const n = pendingChangeCount(), changes = `${n} change${n===1?'':'s'}`;
-  if(isOffline() || driveStatus==='offline') return n ? `Offline — ${changes} saved on this phone, will sync when you're back online` : `Offline — keep working; changes will sync when you're back online`;
-  if(n && driveStatus==='error') return `Online, but ${changes} haven't synced yet — will retry`;
-  if(!driveEnabled()) return 'Online';
-  if(n) return `Online — syncing ${changes}…`;
-  if(driveRemote && driveRemote.savedAt){
-    const when = new Date(driveRemote.savedAt).toLocaleString([], {month:'short', day:'numeric', hour:'numeric', minute:'2-digit'});
-    return `Online — up to date with Google Drive (last saved ${when}${driveRemote.savedBy ? ' by '+driveRemote.savedBy : ''})`;
-  }
-  return 'Online — everything is synced';
-}
-function refreshSyncBar(){
-  const btn = document.getElementById('conn-btn'), icon = document.getElementById('conn-icon'), badge = document.getElementById('conn-badge');
-  if(!btn || !icon || !badge) return;
-  const offline = isOffline() || driveStatus==='offline';
-  const n = pendingChangeCount();
-  const stuck = offline || (n && driveStatus==='error');
-  icon.innerHTML = offline ? FENCE_BROKEN : FENCE_OK;
-  badge.className = 'conn-badge ' + (stuck ? 'waiting' : 'ok');
-  badge.textContent = stuck ? (n ? (n > 99 ? '99+' : String(n)) : '') : '✓';
-  btn.title = connectionText();
-  btn.setAttribute('aria-label', connectionText());
-}
-function showConnectionStatus(){ toast(connectionText()); }
-function onConnectionBack(){
-  offlineNoticeShown = false;
-  if(driveStatus==='offline') driveStatus = 'idle';
-  refreshDriveStatusUI();
-  if(!driveEnabled() || !storageReady) return;
-  const had = pendingChangeCount();
-  driveSync().then(()=>{ if(had && !pendingChangeCount()) toast(`Back online — ${had} change${had===1?'':'s'} synced`); }).catch(()=>{ driveStatus = isOffline() ? 'offline' : 'error'; refreshDriveStatusUI(); });
-}
-window.addEventListener('online', onConnectionBack);
-window.addEventListener('offline', ()=>{ if(driveEnabled()) driveStatus = 'offline'; refreshDriveStatusUI(); });
-function refreshDriveStatusUI(){
-  refreshSyncBar();
-  updateSyncBanner();
-  const dot = document.getElementById('drive-dot');
-  if(!dot) return;
-  dot.classList.remove('connected','error');
-  if(driveEnabled()){
-    if(driveStatus==='error' || driveStatus==='offline') dot.classList.add('error');
-    else dot.classList.add('connected');
-  }
-}
 function normalizeState(parsed){
   parsed = parsed || {};
   return {
@@ -1009,263 +866,755 @@ function normalizeState(parsed){
     tagColors: (parsed.tagColors || []).filter(t=> t && t.letter).map(t=>({ letter: String(t.letter).trim().toUpperCase(), color: t.color || '#888888' })),
   };
 }
-function applyLoadedState(parsed){
-  Object.assign(state, normalizeState(parsed));
+function colKey(col, r){
+  if(r===null || r===undefined) return '';
+  const k = COL_KEYS[col](r);
+  return (k===undefined || k===null || k==='') ? '' : String(k);
+}
+function isoMax(a, b){ return (a||'') > (b||'') ? (a||'') : (b||''); }
+
+/* A backup document (or the old plain herd JSON, or an old export) with every field filled in. */
+function fillDoc(raw){
+  raw = raw || {};
+  const src = (raw.app==='rangebook' && raw.data) ? raw.data : raw;   // old "Export backup file" format
+  const doc = Object.assign({ app:'rangebook', version:2 }, normalizeState(src));
+  doc.savedAt = String(src.savedAt || '');
+  // Herd data from before time stamps existed still counts as "changed here" so it gets backed up.
+  if(!doc.savedAt && hasRecords(doc)) doc.savedAt = OLD_STAMP;
+  doc.replacedAt = String(src.replacedAt || '');
+  doc.settings = (src.settings && typeof src.settings==='object') ? src.settings : {};
+  doc.tombs = {}; doc.stamps = {};
+  ALL_COLS.forEach(col=>{
+    doc.tombs[col] = Object.assign({}, (src.tombs||{})[col]);
+    const stamps = Object.assign({}, (src.stamps||{})[col]);
+    doc[col].forEach(r=>{
+      if(RECORD_COLS.includes(col)){
+        if(!r.id) r.id = uid();
+        if(!r.updated) r.updated = OLD_STAMP;
+      } else {
+        const k = colKey(col, r);
+        if(k && !stamps[k]) stamps[k] = OLD_STAMP;
+      }
+    });
+    doc.stamps[col] = stamps;
+  });
+  doc.log = Array.isArray(src.log) ? src.log.filter(e=> e && e.id && e.at) : [];
+  return doc;
+}
+function looksLikeBackup(raw){
+  const src = raw && (raw.app==='rangebook' && raw.data ? raw.data : raw);
+  return !!src && typeof src==='object' && ['animals','events','breeding','pastures','breeds','vaccines'].some(k=> Array.isArray(src[k]));
+}
+function buildDoc(){
+  const d = normalizeState(state);
+  return Object.assign({ app:'rangebook', version:2, exported:new Date().toISOString(),
+    savedAt: docMeta.savedAt, replacedAt: docMeta.replacedAt, settings: docMeta.settings || {} }, d,
+    { tombs: docMeta.tombs, stamps: docMeta.stamps, log: docMeta.log });
+}
+function applyDoc(raw){
+  const doc = fillDoc(raw);
+  Object.assign(state, normalizeState(doc));
+  docMeta = { savedAt:doc.savedAt, replacedAt:doc.replacedAt, tombs:doc.tombs, stamps:doc.stamps, log:doc.log, settings:doc.settings };
+  markSeen();
+}
+function hasRecords(d){ d = d || state; return ALL_COLS.some(col=> (d[col]||[]).length); }
+function hasData(){ return hasRecords() || ALL_COLS.some(col=> Object.keys(docMeta.tombs[col]||{}).length); }
+
+/* ---------- Change stamping ----------
+   Every save compares the records with how they looked after the last save, so each
+   added, edited or deleted record gets its time stamp (or tombstone) and a line in the log. */
+var lastSeen = null;
+function recordLabel(col, r){
+  try{
+    if(col==='animals') return displayName(r);
+    if(col==='events') return (r.type || 'Event') + (r.animalId ? ' · ' + displayName(animalById(r.animalId)) : '') + (r.date ? ' · ' + fmtDate(r.date) : '');
+    if(col==='breeding') return 'Reproduction · ' + nameForTag(r.cowTagId || '');
+    if(col==='pastures') return r.name || 'Pasture';
+    if(col==='breeds') return r.name;
+    if(col==='vaccines') return String(r);
+    if(col==='tagColors') return 'Year letter ' + r.letter;
+  }catch(e){}
+  return COL_WORDS[col];
+}
+function snapshotState(){
+  const snap = {};
+  ALL_COLS.forEach(col=>{
+    const m = new Map();
+    (state[col]||[]).forEach(r=>{
+      const k = colKey(col, r);
+      if(!k) return;
+      let json;
+      if(RECORD_COLS.includes(col)){ const { updated, ...rest } = r; json = JSON.stringify(rest); }
+      else json = JSON.stringify(r);
+      m.set(k, { json, r });
+    });
+    snap[col] = m;
+  });
+  return snap;
+}
+function markSeen(){ lastSeen = snapshotState(); }
+function stampChanges(){
+  const cur = snapshotState();
+  if(!lastSeen){ lastSeen = cur; return 0; }
+  const now = new Date().toISOString();
+  let n = 0;
+  ALL_COLS.forEach(col=>{
+    const before = lastSeen[col], after = cur[col];
+    const tombs = docMeta.tombs[col] || (docMeta.tombs[col] = {});
+    const stamps = docMeta.stamps[col] || (docMeta.stamps[col] = {});
+    after.forEach((v, k)=>{
+      const old = before.get(k);
+      if(old && old.json===v.json) return;
+      if(RECORD_COLS.includes(col)) v.r.updated = now; else stamps[k] = now;
+      delete tombs[k];
+      logChange(old ? 'changed' : 'added', col, k, recordLabel(col, v.r), now);
+      n++;
+    });
+    before.forEach((v, k)=>{
+      if(after.has(k)) return;
+      tombs[k] = now;
+      delete stamps[k];
+      logChange('deleted', col, k, recordLabel(col, v.r), now);
+      n++;
+    });
+  });
+  lastSeen = cur;
+  if(n) docMeta.savedAt = now;
+  return n;
+}
+function logChange(action, col, key, label, at){
+  const log = docMeta.log;
+  const last = log[log.length - 1];
+  // Several edits to the same record within two minutes are one line.
+  if(last && last.action===action && last.col===col && last.key===key && last.device===DEVICE_NAME && Date.parse(at) - Date.parse(last.at) < 120000){
+    last.at = at; last.label = label; return;
+  }
+  log.push({ id: uid(), at, device: DEVICE_NAME, action, col, key, what: COL_WORDS[col] || col, label: String(label||'').slice(0, 80) });
+  if(log.length > LOG_MAX) log.splice(0, log.length - LOG_MAX);
+}
+function mergeLogs(a, b){
+  const m = new Map();
+  (a||[]).concat(b||[]).forEach(e=>{ if(e && e.id && !m.has(e.id)) m.set(e.id, e); });
+  return Array.from(m.values()).sort((x, y)=> String(x.at).localeCompare(String(y.at))).slice(-LOG_MAX);
 }
 
-/* ---------- Multi-user Drive sync ----------
-   Several people can share one Drive file. Each device remembers the last copy
-   it got from Drive (syncBase). Before saving, it fetches the latest file and
-   replays only this device's own adds/edits/deletes onto it, so one person's
-   save never wipes out someone else's changes. */
-var syncBase = null;
-/* Offline support: the last copy that matched Google Drive is kept on the phone ('herd-sync-base').
-   Anything in the local copy that differs from it hasn't reached Drive yet, so it's merged in the
-   next time Rangebook can sync, even if the tab was closed in between. */
-var SYNC_BASE_KEY = 'herd-sync-base';
-function setSyncBase(v){
-  syncBase = v;
-  try{ if(v===null) localStorage.removeItem(SYNC_BASE_KEY); else localStorage.setItem(SYNC_BASE_KEY, v); }catch(e){}
+/* ---------- Merge, record by record ----------
+   Union of both sides; for a record on both, the newer `updated` wins; tombstones combine
+   (newest time per record) and drop any record that isn't newer than its tombstone.
+   If one side deliberately replaced everything after the other side's last change
+   (a restore or reset), that side is taken as it is. */
+function mergeDocs(localRaw, remoteRaw){
+  const L = fillDoc(localRaw), R = fillDoc(remoteRaw);
+  const log = mergeLogs(L.log, R.log);
+  if(R.replacedAt && R.replacedAt > L.savedAt) return { doc: Object.assign({}, R, { log }), incoming: countDiff(L, R), replaced: true };
+  if(L.replacedAt && L.replacedAt > R.savedAt) return { doc: Object.assign({}, L, { log }), incoming: 0, replaced: false };
+  const out = { app:'rangebook', version:2, savedAt: isoMax(L.savedAt, R.savedAt), replacedAt: isoMax(L.replacedAt, R.replacedAt),
+    settings: R.savedAt > L.savedAt ? R.settings : L.settings, tombs:{}, stamps:{}, log };
+  ALL_COLS.forEach(col=>{
+    const isRec = RECORD_COLS.includes(col);
+    const tombs = Object.assign({}, L.tombs[col]);
+    Object.entries(R.tombs[col]||{}).forEach(([k, t])=>{ if(!tombs[k] || t > tombs[k]) tombs[k] = t; });
+    const stampOf = (side, r, k)=> isRec ? (r.updated || OLD_STAMP) : ((side.stamps[col]||{})[k] || OLD_STAMP);
+    const pick = new Map();
+    L[col].forEach(r=>{ const k = colKey(col, r); if(k) pick.set(k, { r, t: stampOf(L, r, k) }); });
+    R[col].forEach(r=>{ const k = colKey(col, r); if(!k) return; const t = stampOf(R, r, k); const cur = pick.get(k); if(!cur || t > cur.t) pick.set(k, { r, t }); });
+    const list = [], stamps = {};
+    pick.forEach((v, k)=>{
+      if(tombs[k] && tombs[k] >= v.t) return;
+      delete tombs[k];
+      list.push(v.r);
+      if(!isRec) stamps[k] = v.t;
+    });
+    out[col] = list; out.tombs[col] = tombs; out.stamps[col] = stamps;
+  });
+  return { doc: out, incoming: countDiff(L, out), replaced: false };
 }
-function readStoredBase(){ try{ return localStorage.getItem(SYNC_BASE_KEY); }catch(e){ return null; } }
-// How many records (animals, events, pastures…) differ from what Drive last had.
-function pendingChangeCount(){
-  if(!driveEnabled() || syncBase===null) return 0;
-  let base; try{ base = JSON.parse(syncBase); }catch(e){ return 0; }
-  const cur = normalizeState(state);
+// How many records differ between two documents (added, changed or removed).
+function countDiff(a, b){
   let n = 0;
-  Object.keys(SYNC_KEYS).forEach(name=>{
-    const keyFn = SYNC_KEYS[name];
-    const map = list=> new Map((list||[]).map(r=>[String(keyFn(r)), JSON.stringify(r)]));
-    const b = map(base[name]), c = map(cur[name]);
-    c.forEach((v,k)=>{ if(b.get(k)!==v) n++; });
-    b.forEach((v,k)=>{ if(!c.has(k)) n++; });
+  ALL_COLS.forEach(col=>{
+    const map = d=> new Map((d[col]||[]).map(r=>[colKey(col, r), JSON.stringify(r)]));
+    const A = map(a), B = map(b);
+    B.forEach((v, k)=>{ if(A.get(k)!==v) n++; });
+    A.forEach((v, k)=>{ if(!B.has(k)) n++; });
   });
   return n;
 }
-function isOffline(){ return typeof navigator!=='undefined' && navigator.onLine===false; }
-var SYNC_KEYS = {
-  animals: r=>r.id, events: r=>r.id, breeding: r=>r.id, pastures: r=>r.id,
-  breeds: r=>String(r.name||'').toLowerCase(), vaccines: r=>String(r).toLowerCase(),
-  tagColors: r=>String(r.letter||'').toUpperCase(),
-};
-function mergeCollection(base, local, remote, keyFn){
-  const key = r=>{ const k = keyFn(r); return (k===undefined || k===null || k==='') ? 'json:'+JSON.stringify(r) : String(k); };
-  const baseMap = new Map(base.map(r=>[key(r), JSON.stringify(r)]));
-  const localKeys = new Set(local.map(key));
-  const result = new Map(remote.map(r=>[key(r), r]));
-  baseMap.forEach((_, k)=>{ if(!localKeys.has(k)) result.delete(k); });          // deleted here
-  local.forEach(r=>{
-    const k = key(r);
-    if(!baseMap.has(k) || baseMap.get(k)!==JSON.stringify(r)) result.set(k, r);   // added or edited here
+
+/* ---------- This computer's copy (IndexedDB) ---------- */
+var LOCAL_DOC_KEY = 'doc', LOCAL_FALLBACK_KEY = 'herd-data';
+var idbHandle = null;
+function idbOpen(){
+  if(idbHandle) return Promise.resolve(idbHandle);
+  return new Promise((resolve, reject)=>{
+    if(typeof indexedDB==='undefined'){ reject(new Error('no IndexedDB')); return; }
+    const rq = indexedDB.open('rangebook', 1);
+    rq.onupgradeneeded = ()=> rq.result.createObjectStore('kv');
+    rq.onsuccess = ()=>{ idbHandle = rq.result; resolve(idbHandle); };
+    rq.onerror = ()=> reject(rq.error || new Error('IndexedDB failed'));
+    rq.onblocked = ()=> reject(new Error('IndexedDB blocked'));
   });
-  return Array.from(result.values());
 }
-function mergeStates(base, local, remote){
-  base = normalizeState(base); local = normalizeState(local); remote = normalizeState(remote);
-  const out = {};
-  Object.keys(SYNC_KEYS).forEach(name=>{ out[name] = mergeCollection(base[name], local[name], remote[name], SYNC_KEYS[name]); });
-  return out;
+function idbDo(mode, fn){
+  return idbOpen().then(db=> new Promise((resolve, reject)=>{
+    const tx = db.transaction('kv', mode);
+    const rq = fn(tx.objectStore('kv'));
+    tx.oncomplete = ()=> resolve(rq && rq.result);
+    tx.onerror = tx.onabort = ()=> reject(tx.error || new Error('IndexedDB write failed'));
+  }));
 }
-var syncInFlight = null;
-var syncAgain = false;
-/* Sync trouble that needs to be seen stays on screen as a banner under the top bar:
-   - Drive couldn't be loaded on open, so this device is showing its own (possibly older) copy;
-   - changes made here haven't reached Drive for a while. */
-var loadFellBack = false, syncFailingSince = null, lastSyncError = '', localSaveFailed = false;
-var LAST_SYNC_KEY = 'herd-last-sync';
-function saveLocalCopy(json){
-  try{ localStorage.setItem('herd-data', json || JSON.stringify(state)); localSaveFailed = false; }
-  catch(e){ localSaveFailed = true; }
-}
-function lastSyncedText(){
-  let t = 0; try{ t = Number(localStorage.getItem(LAST_SYNC_KEY)) || 0; }catch(e){}
-  return t ? new Date(t).toLocaleString([], {month:'short', day:'numeric', hour:'numeric', minute:'2-digit'}) : 'an earlier visit';
-}
-function syncBannerText(){
-  if(!driveEnabled()) return '';
-  if(loadFellBack){
-    return isOffline()
-      ? `Offline — showing the herd saved on this device (last synced ${lastSyncedText()}). It will update from Google Drive when you're back online.`
-      : `Couldn't load the latest herd from Google Drive — showing the copy saved on this device (last synced ${lastSyncedText()}). Retrying…`;
-  }
-  const n = pendingChangeCount();
-  if(n && driveStatus==='error' && syncFailingSince && Date.now() - syncFailingSince > 15000){
-    return `${n} change${n===1?'':'s'} on this device ${n===1?"hasn't":"haven't"} reached Google Drive yet — keep Rangebook open while it retries.`
-      + (localSaveFailed ? " This device's storage is full, so closing Rangebook now would lose them." : '')
-      + (lastSyncError ? ` (${lastSyncError})` : '');
-  }
-  return '';
-}
-function updateSyncBanner(){
-  const el = document.getElementById('sync-banner');
-  if(!el) return;
-  const msg = syncBannerText();
-  el.hidden = !msg;
-  if(msg) el.innerHTML = `<span>${escapeHtml(msg)}</span><button type="button" class="btn ghost sm" onclick="retrySyncNow()">Retry now</button>`;
-}
-function retrySyncNow(){
-  driveSync().then(()=> toast('Synced with Google Drive')).catch(e=>{ driveStatus = isOffline() ? 'offline' : 'error'; refreshDriveStatusUI(); toast("Still can't reach Google Drive — will keep trying"); });
-}
-// After a big change (an import), say plainly once it's on Drive — or that it isn't yet.
-function confirmOnDrive(label){
-  if(!driveEnabled()) return;
-  setTimeout(()=>{
-    driveSync().then(()=>{
-      if(!pendingChangeCount()) toast(`${label} saved to Google Drive — ${state.animals.length} animals there now`);
-    }).catch(()=>{
-      driveStatus = isOffline() ? 'offline' : 'error'; refreshDriveStatusUI();
-      toast(`${label} is saved on this device but hasn't reached Google Drive yet — keep Rangebook open while it retries`);
-    });
-  }, 400);
-}
-// Pull the latest Drive copy, fold in this device's changes, and push if anything of ours is new.
-function driveSync(){
-  if(syncInFlight){ syncAgain = true; return syncInFlight; }
-  setDriveBusy(true);
-  syncInFlight = (async ()=>{
-    try{
-      do{
-        syncAgain = false;
-        if(driveScriptVersion === null) await driveCheckVersion();
-        const before = JSON.stringify(normalizeState(state));
-        let mergedJson;
-        if(syncBase !== null && before === syncBase){
-          // Nothing new here — just pick up everyone else's changes, unless Drive's version stamp says there are none.
-          const st = hostedInWorkspace && driveScriptVersion >= 6 && driveRemote ? await gasCall('rbStatus') : null;
-          if(st && st.rev === driveRemote.rev){ noteDriveRev(st); mergedJson = before; }
-          else mergedJson = JSON.stringify(normalizeState(await driveFetchState()));
-        } else {
-          if(driveScriptVersion === null) await driveCheckVersion();
-          if(driveScriptVersion >= 2){
-            mergedJson = JSON.stringify(normalizeState(JSON.parse(await driveMergeSave(before, syncBase || '{}'))));
-          } else {
-            // Older script: merge here (small race window if two people save in the same moment).
-            const remote = normalizeState(await driveFetchState());
-            const merged = mergeStates(syncBase ? JSON.parse(syncBase) : {}, JSON.parse(before), remote);
-            mergedJson = JSON.stringify(merged);
-            if(mergedJson !== JSON.stringify(remote)) await driveSaveState(merged);
-          }
-        }
-        mergedJson = keepLocalOnlyData(mergedJson, JSON.parse(before));
-        setSyncBase(mergedJson);
-        const merged = JSON.parse(mergedJson);
-        if(JSON.stringify(normalizeState(state)) === before){
-          if(mergedJson !== before){ applyLoadedState(merged); render(); }
-        } else {
-          // Edits made while we were syncing: replay them onto the merged copy and go again.
-          applyLoadedState(mergeStates(JSON.parse(before), state, merged));
-          render();
-          syncAgain = true;
-        }
-        saveLocalCopy();
-        driveStatus = 'connected';
-        driveLastSync = new Date();
-        loadFellBack = false; syncFailingSince = null; lastSyncError = '';
-        try{ localStorage.setItem(LAST_SYNC_KEY, String(Date.now())); }catch(e){}
-      } while(syncAgain);
-    } catch(e){
-      if(!syncFailingSince) syncFailingSince = Date.now();
-      lastSyncError = (e && e.message) || '';
-      throw e;
-    } finally {
-      syncInFlight = null;
-      setDriveBusy(false);
-      refreshDriveStatusUI();
-    }
-  })();
-  return syncInFlight;
-}
-function pullFromDrive(){
-  // A hidden tab still pushes changes that haven't reached Drive; it only skips checking for other people's.
-  if(!storageReady || !driveEnabled() || (document.hidden && !pendingChangeCount())) return;
-  driveSync().catch(()=>{ driveStatus = isOffline() ? 'offline' : 'error'; refreshDriveStatusUI(); });
-}
-setInterval(pullFromDrive, 30000);
-// While Drive can't be reached (or this device couldn't load it), retry more often.
-setInterval(()=>{ if(driveStatus==='error' || loadFellBack) pullFromDrive(); }, 10000);
-// Closing Rangebook while changes are still on their way to Drive asks first.
-window.addEventListener('beforeunload', e=>{
-  if(!storageReady || !driveEnabled()) return;
-  if((syncInFlight || pendingChangeCount()) && (!isOffline() || localSaveFailed)){ e.preventDefault(); e.returnValue = ''; }
-});
-document.addEventListener('visibilitychange', pullFromDrive);
-window.addEventListener('focus', pullFromDrive);
-async function loadState(){
+async function readLocalDoc(){
   try{
-    if(driveEnabled()){
-      await driveCheckVersion();
-      let local = {};
-      try{ local = normalizeState(JSON.parse(localStorage.getItem('herd-data')||'{}')); }catch(e){}
-      const remote = normalizeState(await driveFetchState());
-      let parsed = JSON.parse(keepLocalOnlyData(JSON.stringify(remote), local));
-      // Changes made on this phone that never reached Drive (e.g. entered offline, then the tab closed):
-      // replay them onto Drive's current copy, then push them up.
-      const storedBase = readStoredBase();
-      const localJson = JSON.stringify(local);
-      const hasLocal = Object.keys(SYNC_KEYS).some(k=> (local[k]||[]).length);
-      let pending = false;
-      if(storedBase && hasLocal && localJson !== storedBase){
-        try{ parsed = mergeStates(JSON.parse(storedBase), local, parsed); pending = true; }catch(e){}
-      }
-      driveStatus = 'connected';
-      applyLoadedState(parsed);
-      setSyncBase(pending ? JSON.stringify(remote) : JSON.stringify(parsed));
-      if(pending) setTimeout(()=>{ driveSync().then(()=>{ if(!pendingChangeCount()) toast('Changes made offline are now synced'); }).catch(()=>{}); }, 0);
-    } else if(hasAppStorage){
-      const res = await window.storage.get('herd-data', false);
-      if(res && res.value) applyLoadedState(JSON.parse(res.value));
-    } else {
-      const raw = localStorage.getItem('herd-data');
-      if(raw) applyLoadedState(JSON.parse(raw));
+    const v = await idbDo('readonly', s=> s.get(LOCAL_DOC_KEY));
+    if(v) return JSON.parse(v);
+  }catch(e){}
+  // First run with IndexedDB (or IndexedDB unavailable): the copy saved by earlier versions.
+  try{ const raw = localStorage.getItem(LOCAL_FALLBACK_KEY); if(raw) return JSON.parse(raw); }catch(e){}
+  return null;
+}
+var localWriteChain = Promise.resolve();
+function writeLocalDoc(){
+  const json = JSON.stringify(buildDoc());
+  localWriteChain = localWriteChain.catch(()=>{}).then(async ()=>{
+    try{
+      await idbDo('readwrite', s=> s.put(json, LOCAL_DOC_KEY));
+      // The data now lives in IndexedDB; drop the older copies so they can't go stale.
+      try{ ['herd-data','herd-sync-base','herd-drive-config','herd-drive-pending-secret','herd-last-sync'].forEach(k=> localStorage.removeItem(k)); }catch(e){}
+    }catch(e){
+      localStorage.setItem(LOCAL_FALLBACK_KEY, json);   // throws when storage is full: the save failed
     }
-  }catch(e){
-    if(driveEnabled()){
-      driveStatus = isOffline() ? 'offline' : 'error';
-      loadFellBack = true;
-      try{
-        const raw = localStorage.getItem('herd-data');
-        if(raw) applyLoadedState(JSON.parse(raw));
-      }catch(e2){}
-      // Keep merging against what Drive last had, not against nothing.
-      syncBase = readStoredBase();
-    }
-  }
+  });
+  return localWriteChain;
+}
+async function loadState(){
+  const raw = await readLocalDoc();
+  applyDoc(raw || {});
+  // Records from before time stamps existed: count them as saved now, so they back up with a real date.
+  if(docMeta.savedAt===OLD_STAMP) docMeta.savedAt = new Date().toISOString();
   storageReady = true;
   // Repair Dam / Sire values that point at a herd animal in a slightly different form (e.g. from an older import).
   const relinked = linkParentRefs(null);
   if(relinked){ saveState(); setTimeout(()=> toast(`Linked ${relinked} dam/sire record${relinked===1?'':'s'} to animals in the herd`), 600); }
   if(resetOldBirthWeights()) saveState();
-  refreshDriveStatusUI();
+  if(raw && !raw.version) writeLocalDoc().catch(()=>{});   // move an older copy into IndexedDB
+  refreshBadge();
 }
-var saveTimer = null, offlineNoticeShown = false;
+var saveTimer = null, savingNow = false, localSaveFailed = false;
 function saveState(){
   if(promoteHeifersWithCalves().length) render();
   clearTimeout(saveTimer);
-  saveTimer = setTimeout(async ()=>{
-    const json = JSON.stringify(state);
-    saveLocalCopy(json);
-    try{
-      if(driveEnabled()){
-        await driveSync();
-      } else if(hasAppStorage){
-        await window.storage.set('herd-data', json, false);
-      }
-    }catch(e){
-      if(driveEnabled()){
-        if(isOffline()){
-          driveStatus = 'offline';
-          offlineNoticeShown = true;
-        } else {
-          driveStatus = 'error';
-          toast('Could not sync to Google Drive — saved on this phone, will retry');
-        }
-      } else {
-        toast('Could not save — changes may be lost');
-      }
+  savingNow = true;
+  refreshBadge();
+  saveTimer = setTimeout(flushSave, 150);
+}
+async function flushSave(){
+  clearTimeout(saveTimer); saveTimer = null;
+  const changed = stampChanges();
+  try{ await writeLocalDoc(); localSaveFailed = false; }
+  catch(e){
+    if(!localSaveFailed) toast("Couldn't save on this computer. Tap the badge at the top and download a backup file now.");
+    localSaveFailed = true;
+  }
+  savingNow = false;
+  if(changed) scheduleBackup();
+  refreshBadge();
+}
+
+/* =========================================================
+   GOOGLE DRIVE BACKUP
+   Signs in with Google Identity Services and talks to the Drive REST API directly.
+   The backup is one gzip JSON file in a folder the user chooses, updated in place,
+   plus one dated copy per day. See syncOnce() for the rules.
+========================================================= */
+var DRIVE_SCOPE = 'https://www.googleapis.com/auth/drive';
+var DRIVE_API = 'https://www.googleapis.com/drive/v3', DRIVE_UPLOAD = 'https://www.googleapis.com/upload/drive/v3';
+var DRIVE_CFG_KEY = 'rb-drive', DRIVE_TOKEN_KEY = 'rb-drive-token';
+function deviceName(){
+  const ua = (typeof navigator!=='undefined' && navigator.userAgent) || '';
+  if(/iPhone/.test(ua)) return 'iPhone';
+  if(/iPad/.test(ua) || (/Macintosh/.test(ua) && navigator.maxTouchPoints > 1)) return 'iPad';
+  if(/Android/.test(ua)) return /Mobile/.test(ua) ? 'Android phone' : 'Android tablet';
+  if(/CrOS/.test(ua)) return 'Chromebook';
+  if(/Windows/.test(ua)) return 'Windows PC';
+  if(/Macintosh|Mac OS X/.test(ua)) return 'Mac';
+  if(/Linux/.test(ua)) return 'Linux PC';
+  return 'Computer';
+}
+var DEVICE_NAME = deviceName();
+/* This computer's Drive settings. lastRemote / lastLocal are the Drive file's modifiedTime and this
+   computer's savedAt at the last successful sync. */
+var DRIVE_DEFAULTS = { clientId:'', account:'', folderId:'', folderPath:'', mainId:'', lastRemote:'', lastLocal:'',
+  auto:true, loadOnOpen:true, keep:14, name:'Herd', lastBackupAt:'', lastDaily:'', lastDownloadAt:'', lastSize:0 };
+function loadDriveCfg(){
+  try{ return Object.assign({}, DRIVE_DEFAULTS, JSON.parse(localStorage.getItem(DRIVE_CFG_KEY) || '{}')); }
+  catch(e){ return Object.assign({}, DRIVE_DEFAULTS); }
+}
+var drive = loadDriveCfg();
+function saveDriveCfg(){ try{ localStorage.setItem(DRIVE_CFG_KEY, JSON.stringify(drive)); }catch(e){} }
+function clientId(){ return String(drive.clientId || (window.RANGEBOOK_CONFIG && window.RANGEBOOK_CONFIG.googleClientId) || '').trim(); }
+function driveSetUp(){ return !!(clientId() && drive.folderId); }
+function backupName(){ return String(drive.name || 'Herd').replace(/[\\/:*?"<>|]+/g, ' ').trim() || 'Herd'; }
+function mainFileName(){ return `Range Book backup - ${backupName()}.json.gz`; }
+function dailyFileName(day){ return `Range Book backup - ${backupName()} - ${day}.json.gz`; }
+function localDay(d){ d = d || new Date(); return d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0'); }
+function fmtWhen(iso){
+  if(!iso || iso===OLD_STAMP) return '';
+  const d = new Date(iso);
+  if(isNaN(d)) return '';
+  return d.toLocaleString('en-US', { month:'short', day:'numeric', year: d.getFullYear()===new Date().getFullYear() ? undefined : 'numeric', hour:'numeric', minute:'2-digit' });
+}
+function fileSavedAt(f){ const t = f && f.appProperties && f.appProperties.savedAt; return t && t!==OLD_STAMP ? t : (f && f.modifiedTime) || ''; }
+function isOffline(){ return typeof navigator!=='undefined' && navigator.onLine===false; }
+function driveErr(code, msg){ const e = new Error(msg || code); e.code = code; return e; }
+
+/* ---------- Sign-in (Google Identity Services token client) ----------
+   Access tokens last an hour. They are renewed silently when possible; browsers block
+   sign-in pop-ups that don't come from a click, so then the next click renews it. */
+var tok = (function(){ try{ return JSON.parse(localStorage.getItem(DRIVE_TOKEN_KEY) || 'null') || { access:'', exp:0 }; }catch(e){ return { access:'', exp:0 }; } })();
+function saveTok(){ try{ localStorage.setItem(DRIVE_TOKEN_KEY, JSON.stringify(tok)); }catch(e){} }
+function tokenValid(){ return !!tok.access && Date.now() < tok.exp; }
+function gisReady(){ return typeof google!=='undefined' && !!(google.accounts && google.accounts.oauth2); }
+var gisLoading = null;
+function loadGis(){
+  if(gisReady()) return Promise.resolve();
+  if(!gisLoading) gisLoading = new Promise((resolve, reject)=>{
+    const s = document.createElement('script');
+    s.src = 'https://accounts.google.com/gsi/client';
+    s.async = true;
+    s.onload = ()=> gisReady() ? resolve() : reject(driveErr('offline'));
+    s.onerror = ()=>{ gisLoading = null; s.remove(); reject(driveErr('offline', "Couldn't load Google sign-in")); };
+    document.head.appendChild(s);
+  });
+  return gisLoading;
+}
+var tokenClient = null, tokenClientId = '', pendingToken = null;
+function requestToken(prompt, waitMs){
+  // Must run straight from a click (no await before it) when a pop-up may be needed.
+  return new Promise((resolve, reject)=>{
+    if(!gisReady()){ reject(driveErr('signin', 'Google sign-in has not loaded')); return; }
+    if(!tokenClient || tokenClientId!==clientId()){
+      tokenClient = google.accounts.oauth2.initTokenClient({ client_id: clientId(), scope: DRIVE_SCOPE, callback: finishToken, error_callback: failToken });
+      tokenClientId = clientId();
     }
-    refreshDriveStatusUI();
-  }, 150);
+    if(pendingToken){ clearTimeout(pendingToken.timer); pendingToken.reject(driveErr('replaced')); }
+    const p = { resolve, reject };
+    p.timer = setTimeout(()=>{ if(pendingToken===p){ pendingToken = null; reject(driveErr('signin', 'timed out')); } }, waitMs || 120000);
+    pendingToken = p;
+    const opts = { prompt: prompt || '' };
+    if(drive.account) opts.login_hint = drive.account;
+    try{ tokenClient.requestAccessToken(opts); }
+    catch(e){ clearTimeout(p.timer); pendingToken = null; reject(driveErr('signin', e.message)); }
+  });
+}
+function finishToken(r){
+  const p = pendingToken; pendingToken = null;
+  if(!p) return;
+  clearTimeout(p.timer);
+  const scoped = !r || !google.accounts.oauth2.hasGrantedAllScopes || google.accounts.oauth2.hasGrantedAllScopes(r, DRIVE_SCOPE);
+  if(r && r.access_token && scoped){
+    tok = { access: r.access_token, exp: Date.now() + ((Number(r.expires_in) || 3600) - 120) * 1000 };
+    saveTok();
+    hideSigninBanner();
+    p.resolve(tok.access);
+  } else p.reject(driveErr(r && r.access_token ? 'scope' : 'signin', (r && (r.error_description || r.error)) || 'no token'));
+}
+function failToken(err){
+  const p = pendingToken; pendingToken = null;
+  if(!p) return;
+  clearTimeout(p.timer);
+  p.reject(driveErr(err && err.type==='popup_failed_to_open' ? 'popup' : 'signin', (err && (err.message || err.type)) || 'sign-in failed'));
+}
+async function ensureToken(){
+  if(tokenValid()) return tok.access;
+  if(!clientId()) throw driveErr('auth', 'no client id');
+  await loadGis();
+  try{ return await requestToken('', 20000); }
+  catch(e){ throw driveErr('auth', e.message); }
+}
+// After a blocked silent renewal: the first click or key press anywhere renews the sign-in, then syncs.
+var gestureArmed = false;
+function armGestureSignIn(){
+  if(gestureArmed || !clientId()) return;
+  gestureArmed = true;
+  loadGis().catch(()=>{});
+  const handler = ev=>{
+    if(ev.type==='keydown' && (ev.key==='Escape' || ev.key==='Tab' || ev.key==='Shift')) return;
+    // Buttons that sign in themselves (Connect, Back up now) handle it.
+    if(ev.target && ev.target.closest && ev.target.closest('#signin-banner, [data-signin]')) return;
+    document.removeEventListener('click', handler, true);
+    document.removeEventListener('keydown', handler, true);
+    gestureArmed = false;
+    if(tokenValid()){ syncNow('signin'); return; }
+    if(!gisReady()){ showSigninBanner(); return; }
+    requestToken('').then(()=> syncNow('signin')).catch(e=>{ if(e.code!=='replaced') showSigninBanner(); });
+  };
+  document.addEventListener('click', handler, true);
+  document.addEventListener('keydown', handler, true);
+}
+// Run fn after making sure we're signed in; called from a click so a pop-up is allowed.
+function withSignIn(fn){
+  if(tokenValid()) return fn();
+  if(!gisReady()){ loadGis().catch(()=>{}); toast('Google sign-in is still loading — tap again in a moment'); return; }
+  requestToken(drive.account ? '' : 'select_account').then(()=> fn()).catch(e=>{
+    if(e.code==='replaced') return;
+    if(e.code==='popup') showSigninBanner(); else toast("Google sign-in didn't finish. Try again.");
+  });
+}
+function showSigninBanner(){
+  const el = document.getElementById('signin-banner');
+  if(!el) return;
+  el.hidden = false;
+  el.innerHTML = `<span>Google Drive sign-in did not finish, so changes here are waiting to back up. Tip: allow pop-ups for this site and it will happen by itself.</span>
+    <span class="sb-actions"><button type="button" class="btn rust sm" onclick="signinBannerConnect()">Connect</button><button type="button" class="btn ghost sm" onclick="hideSigninBanner()">Not now</button></span>`;
+}
+function hideSigninBanner(){ const el = document.getElementById('signin-banner'); if(el) el.hidden = true; }
+function signinBannerConnect(){ withSignIn(()=>{ hideSigninBanner(); syncNow('signin'); }); }
+
+/* ---------- Drive REST calls ---------- */
+var FILE_FIELDS = 'id,name,mimeType,modifiedTime,size,appProperties,parents,trashed';
+function qs(params){ return Object.keys(params).map(k=> k + '=' + encodeURIComponent(params[k])).join('&'); }
+async function gapi(url, opts, retried){
+  opts = opts || {};
+  const token = await ensureToken();
+  let res;
+  try{ res = await fetch(url, Object.assign({}, opts, { headers: Object.assign({}, opts.headers, { Authorization: 'Bearer ' + token }) })); }
+  catch(e){ throw driveErr('offline', 'network'); }
+  if(res.status===401 && !retried){ tok = { access:'', exp:0 }; saveTok(); return gapi(url, opts, true); }
+  if(res.status===401) throw driveErr('auth');
+  if(res.ok) return res;
+  let reason = '';
+  try{ const j = await res.json(); reason = (j.error && j.error.errors && j.error.errors[0] && j.error.errors[0].reason) || (j.error && j.error.status) || ''; }catch(e){}
+  if(res.status===404) throw driveErr('notfound', reason);
+  if(res.status===403 && /rate|limit/i.test(reason)) throw driveErr('busy', reason);
+  if(res.status===403) throw driveErr('forbidden', reason);
+  throw driveErr('http', 'HTTP ' + res.status + (reason ? ' ' + reason : ''));
+}
+async function driveGetMeta(id, fields){
+  return (await gapi(`${DRIVE_API}/files/${encodeURIComponent(id)}?${qs({ fields: fields || FILE_FIELDS, supportsAllDrives:true })}`)).json();
+}
+async function driveList(query, extra){
+  let files = [], pageToken = '';
+  do{
+    const params = Object.assign({ q: query, fields: 'nextPageToken,files(' + FILE_FIELDS + ')', pageSize: 200,
+      supportsAllDrives: true, includeItemsFromAllDrives: true, corpora: 'allDrives' }, extra || {});
+    if(pageToken) params.pageToken = pageToken;
+    const j = await (await gapi(`${DRIVE_API}/files?${qs(params)}`)).json();
+    files = files.concat(j.files || []);
+    pageToken = j.nextPageToken || '';
+  } while(pageToken && files.length < 1000);
+  return files;
+}
+function tagQuery(kind){ return `appProperties has { key='rangebook' and value='${kind}' }`; }
+async function gzipBytes(text){
+  if(typeof CompressionStream==='undefined') return null;
+  return new Uint8Array(await new Response(new Blob([text]).stream().pipeThrough(new CompressionStream('gzip'))).arrayBuffer());
+}
+// A backup may be gzip (starts with 1f 8b) or plain JSON.
+async function parseBackupBytes(bytes){
+  let text;
+  if(bytes[0]===0x1f && bytes[1]===0x8b){
+    if(typeof DecompressionStream==='undefined') throw driveErr('old-browser');
+    text = await new Response(new Blob([bytes]).stream().pipeThrough(new DecompressionStream('gzip'))).text();
+  } else text = new TextDecoder().decode(bytes);
+  let obj;
+  try{ obj = JSON.parse(String(text).trim()); }catch(e){ return null; }
+  return looksLikeBackup(obj) ? obj : null;
+}
+async function backupBytes(doc){
+  const json = JSON.stringify(doc);
+  const gz = await gzipBytes(json);
+  return gz ? { bytes: gz, mime: 'application/gzip' } : { bytes: new TextEncoder().encode(json), mime: 'application/json' };
+}
+async function driveUpload(fileId, meta, bytes, mime){
+  const boundary = 'rangebook' + Math.random().toString(36).slice(2);
+  const body = new Blob([
+    `--${boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n${JSON.stringify(meta)}\r\n--${boundary}\r\nContent-Type: ${mime}\r\n\r\n`,
+    bytes, `\r\n--${boundary}--`]);
+  const url = `${DRIVE_UPLOAD}/files${fileId ? '/' + encodeURIComponent(fileId) : ''}?${qs({ uploadType:'multipart', supportsAllDrives:true, fields: FILE_FIELDS })}`;
+  return (await gapi(url, { method: fileId ? 'PATCH' : 'POST', headers: { 'Content-Type': 'multipart/related; boundary=' + boundary }, body })).json();
+}
+async function driveDownload(id){
+  const res = await gapi(`${DRIVE_API}/files/${encodeURIComponent(id)}?alt=media&supportsAllDrives=true`);
+  const doc = await parseBackupBytes(new Uint8Array(await res.arrayBuffer()));
+  if(!doc) throw driveErr('bad-file');
+  return doc;
+}
+async function driveTrash(id){
+  await gapi(`${DRIVE_API}/files/${encodeURIComponent(id)}?supportsAllDrives=true`, { method:'PATCH', headers:{ 'Content-Type':'application/json' }, body: JSON.stringify({ trashed: true }) });
+}
+async function findMainFile(){
+  if(drive.mainId){
+    try{
+      const m = await driveGetMeta(drive.mainId);
+      if(!m.trashed && (m.parents||[]).includes(drive.folderId)) return m;
+    }catch(e){ if(e.code!=='notfound') throw e; }
+  }
+  const list = await driveList(`'${drive.folderId}' in parents and ${tagQuery('main')} and trashed=false`);
+  list.sort((a, b)=> String(b.modifiedTime).localeCompare(String(a.modifiedTime)));
+  const m = list[0] || null;
+  drive.mainId = m ? m.id : '';
+  saveDriveCfg();
+  return m;
+}
+// "My Drive › Ranch › Backups" for a folder id.
+async function folderTrail(id){
+  const trail = [];
+  for(let i=0; id && i<20; i++){
+    const f = await driveGetMeta(id, 'id,name,parents,driveId');
+    if(!(f.parents && f.parents.length)){
+      if(f.driveId && f.driveId===f.id){
+        let name = f.name;
+        try{ name = (await (await gapi(`${DRIVE_API}/drives/${encodeURIComponent(f.id)}?fields=name`)).json()).name || name; }catch(e){}
+        trail.unshift({ id: f.id, name }); trail.unshift({ id:'shared', name:'Shared drives' });
+      } else trail.unshift({ id: f.id, name: 'My Drive' });
+      break;
+    }
+    trail.unshift({ id: f.id, name: f.name });
+    id = f.parents[0];
+  }
+  return trail;
+}
+function trailText(trail){ return trail.map(t=> t.name).join(' › '); }
+
+/* ---------- Sync ----------
+   Run when the app opens, every 10 minutes while the tab is visible, when the tab comes back
+   and when the internet returns, and one minute after the last change (a backup):
+     only Drive changed (or this computer is empty) → load the Drive backup;
+     only this computer changed → back up;
+     both changed → merge the Drive backup into the records here, then back up the result;
+     neither → nothing to do.
+   Before each upload the Drive file is checked again; if another computer backed up meanwhile,
+   it is merged in first. After uploading it is checked once more (up to 3 rounds).
+   So an empty or out-of-date computer never overwrites a fuller backup. */
+var syncRun = null, syncQueued = false, syncForce = false, backupTimer = null, retryTimer = null;
+var driveState = 'idle';   // idle | busy | ok | paused (sign-in needed) | error (Drive trouble) | offline
+var driveProblem = '';
+function localChangedSinceSync(){ return hasData() && docMeta.savedAt !== drive.lastLocal; }
+function backupPending(){ return !!backupTimer; }
+function scheduleBackup(){
+  if(!driveSetUp() || !drive.auto) return;
+  clearTimeout(backupTimer);
+  backupTimer = setTimeout(()=>{ backupTimer = null; syncNow('backup'); }, 60000);
+  refreshBadge();
+}
+function syncNow(reason, opts){
+  if(opts && opts.force) syncForce = true;
+  if(!driveSetUp() || !storageReady) return Promise.resolve();
+  if(syncRun){ syncQueued = true; return syncRun; }
+  clearTimeout(retryTimer);
+  syncRun = (async ()=>{
+    try{
+      do{
+        syncQueued = false;
+        const force = syncForce; syncForce = false;
+        await syncOnce(force);
+      } while(syncQueued);
+      driveState = 'ok'; driveProblem = '';
+    }catch(e){ handleSyncError(e); }
+    finally{
+      syncRun = null;
+      if(driveState==='busy') driveState = 'idle';
+      refreshBadge();
+      refreshDriveStatus();
+    }
+  })();
+  return syncRun;
+}
+async function syncOnce(force){
+  if(isOffline()) throw driveErr('offline');
+  if(saveTimer) await flushSave(); else stampChanges();
+  driveState = 'busy'; refreshBadge();
+  clearTimeout(backupTimer); backupTimer = null;
+  const main = await findMainFile();
+  const remoteChanged = !!main && main.modifiedTime !== drive.lastRemote;
+  let needUpload = force || localChangedSinceSync() || (!main && hasData());
+  if(main && remoteChanged) needUpload = (await bringInRemote(main)) || force;
+  if(needUpload && (drive.auto || force)) await uploadBackup();
+  if(localChangedSinceSync()) scheduleBackup();
+}
+/* Bring in the Drive backup. It is always merged record by record rather than loaded over the top:
+   when only Drive changed the result is the same, and if another computer's upload ever overwrote
+   ours, the records it was missing stay here and go back up. Returns true when this computer has
+   something the backup lacks. */
+async function bringInRemote(main){
+  const remote = fillDoc(await driveDownload(main.id));
+  if(saveTimer) await flushSave(); else stampChanges();
+  const localChanged = localChangedSinceSync();
+  // Another computer restored a backup and nothing here is waiting to back up: take it as it is
+  // (this also covers computers whose clocks disagree).
+  const r = !localChanged && remote.replacedAt && remote.replacedAt > (docMeta.replacedAt || '')
+    ? { doc: Object.assign({}, remote, { log: mergeLogs(docMeta.log, remote.log) }), incoming: 0, replaced: true }
+    : mergeDocs(buildDoc(), remote);
+  const needsUpload = countDiff(remote, r.doc) > 0;
+  applyDoc(r.doc);
+  let note = '';
+  if(localChanged || needsUpload){
+    const when = fmtWhen(fileSavedAt(main));
+    const from = (main.appProperties||{}).device || 'another computer';
+    if(r.replaced) note = `The backup saved ${when} on ${from} replaced all records (a restore), so this computer now matches it.`;
+    else if(r.incoming) note = `Combined with the backup saved ${when} on ${from}: ${r.incoming} record${r.incoming===1?'':'s'} with changes from the other computer added. Nothing was lost.`;
+  }
+  drive.lastRemote = main.modifiedTime;
+  if(!needsUpload) drive.lastLocal = docMeta.savedAt;
+  saveDriveCfg();
+  try{ await writeLocalDoc(); localSaveFailed = false; }catch(e){ localSaveFailed = true; }
+  render();
+  if(note) toast(note, 7000);
+  return needsUpload;
+}
+async function uploadBackup(){
+  for(let round = 0; round < 3; round++){
+    stampChanges();
+    const main = await findMainFile();
+    if(main && main.modifiedTime !== drive.lastRemote){
+      const still = await bringInRemote(main);
+      if(!still && round > 0) return;     // the other computer's backup already has everything
+    }
+    if(main && !hasData()) return;        // never upload an empty set over a real backup
+    const doc = buildDoc();
+    const { bytes, mime } = await backupBytes(doc);
+    const meta = { name: mainFileName(), mimeType: mime, appProperties: { rangebook:'main', savedAt: doc.savedAt, device: DEVICE_NAME, name: backupName() } };
+    if(!main) meta.parents = [drive.folderId];
+    const up = await driveUpload(main ? main.id : '', meta, bytes, mime);
+    drive.mainId = up.id; drive.lastRemote = up.modifiedTime; drive.lastLocal = doc.savedAt;
+    drive.lastBackupAt = new Date().toISOString(); drive.lastSize = bytes.length;
+    saveDriveCfg();
+    try{ await makeDailyCopy(doc, bytes, mime); }catch(e){}
+    const check = await driveGetMeta(up.id, 'id,modifiedTime');
+    if(check.modifiedTime === up.modifiedTime) return;
+    // Another computer backed up at the same moment: merge its copy and go again.
+  }
+}
+// The first backup each day also saves a dated copy; copies beyond the number to keep go to the bin.
+async function makeDailyCopy(doc, bytes, mime){
+  const day = localDay();
+  const mark = day + '|' + drive.folderId;
+  if(drive.lastDaily === mark) return;
+  const dailies = await driveList(`'${drive.folderId}' in parents and ${tagQuery('daily')} and trashed=false`);
+  const dayOf = f=> (f.appProperties && f.appProperties.day) || ((f.name.match(/(\d{4}-\d{2}-\d{2})\.json(\.gz)?$/) || [])[1]) || '';
+  if(!dailies.some(f=> dayOf(f)===day)){
+    const f = await driveUpload('', { name: dailyFileName(day), mimeType: mime, parents: [drive.folderId],
+      appProperties: { rangebook:'daily', savedAt: doc.savedAt, device: DEVICE_NAME, name: backupName(), day } }, bytes, mime);
+    dailies.push(Object.assign(f, { appProperties: { day } }));
+  }
+  const keep = Math.max(1, Math.round(Number(drive.keep) || 14));
+  const old = dailies.sort((a, b)=> dayOf(b).localeCompare(dayOf(a))).slice(keep);
+  for(const f of old){ try{ await driveTrash(f.id); }catch(e){} }
+  drive.lastDaily = mark;
+  saveDriveCfg();
+}
+function handleSyncError(e){
+  const code = e && e.code;
+  if(code==='offline' || isOffline()){ driveState = 'offline'; driveProblem = ''; return; }
+  if(code==='auth' || code==='signin' || code==='popup' || code==='scope'){
+    driveState = 'paused';
+    driveProblem = 'The Google Drive sign-in has expired. Click anywhere to renew it, or use Connect in Settings → Manage Data.';
+    armGestureSignIn();
+    return;
+  }
+  driveState = 'error';
+  driveProblem = code==='notfound' || code==='forbidden'
+    ? "Range Book can't open the Google Drive folder. It may have been moved, deleted or unshared. Choose the folder again in Settings → Manage Data."
+    : code==='bad-file' ? "The backup file in Google Drive couldn't be read. Restore a daily copy in Settings → Manage Data."
+    : code==='old-browser' ? 'This browser is too old to read the backup. Update it, or use Chrome, Edge, Safari or Firefox.'
+    : "Couldn't reach Google Drive just now. Your changes are saved on this computer and will back up when it can.";
+  retryTimer = setTimeout(()=> syncNow('retry'), 60000);
+}
+// The app opens, the tab comes back, the internet returns, and every 10 minutes while visible.
+function syncIfWanted(reason){
+  if(!driveSetUp() || !storageReady) return;
+  if(drive.loadOnOpen || localChangedSinceSync()) syncNow(reason);
+}
+setInterval(()=>{ if(!document.hidden) syncIfWanted('timer'); }, 600000);
+document.addEventListener('visibilitychange', ()=>{
+  if(document.hidden){
+    // Leaving the tab: save and back up now rather than in a minute.
+    if(saveTimer) flushSave();
+    if(backupPending() && !isOffline()){ clearTimeout(backupTimer); backupTimer = null; syncNow('hidden'); }
+  } else syncIfWanted('visible');
+});
+window.addEventListener('online', ()=>{ refreshBadge(); setTimeout(()=> syncIfWanted('online'), 3000); });
+window.addEventListener('offline', ()=>{ if(driveState==='busy' || driveState==='ok') driveState = 'offline'; refreshBadge(); });
+// After a big change (an import), back up straight away and say plainly where things stand.
+function confirmOnDrive(label){
+  if(!driveSetUp()) return;
+  setTimeout(async ()=>{
+    if(saveTimer) await flushSave();
+    await syncNow('import', { force:true });
+    if(!localChangedSinceSync()) toast(`${label} backed up to Google Drive — ${state.animals.length} animals there now`);
+    else toast(`${label} is saved on this computer. It will back up to Google Drive as soon as it can.`);
+  }, 400);
+}
+
+/* ---------- The "is my data safe?" badge ---------- */
+var BADGE_ICONS = {
+  ok: '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 18h10.5a4 4 0 0 0 .6-7.95A6 6 0 0 0 6.4 9.2 4.5 4.5 0 0 0 7 18z"/><path d="M9.5 13.2l2 2 3.6-3.8"/></svg>',
+  busy: '<svg class="sb-spin" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 12a8 8 0 0 0-14.3-4.9"/><path d="M4 12a8 8 0 0 0 14.3 4.9"/><path d="M5.2 3.6v3.9h3.9"/><path d="M18.8 20.4v-3.9h-3.9"/></svg>',
+  warn: '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 18h10.5a4 4 0 0 0 .6-7.95A6 6 0 0 0 6.4 9.2 4.5 4.5 0 0 0 7 18z"/><path d="M12 10.5v3"/><path d="M12 16h.01"/></svg>',
+  offline: '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 18h10.5a4 4 0 0 0 2.3-.73M21.4 14A4 4 0 0 0 18.1 10.05 6 6 0 0 0 9.5 5.3M6.4 9.2A4.5 4.5 0 0 0 7 18"/><path d="M3 3l18 18"/></svg>',
+  bad: '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7.5v5.5"/><path d="M12 16.5h.01"/></svg>',
+};
+// [tone, label, icon, explanation]
+function badgeState(){
+  if(localSaveFailed) return ['bad', 'Not saved', 'bad', "The last change couldn't be saved on this computer. Download a backup file now so nothing is lost."];
+  if(savingNow) return ['busy', 'Saving…', 'busy', 'Saving your change on this computer.'];
+  if(!driveSetUp()) return ['warn', 'This computer only', 'warn', clientId()
+    ? 'Saved on this computer only. Connect Google Drive in Settings → Manage Data so a copy is kept safe in Drive.'
+    : 'Saved on this computer only. Set up Google Drive backup in Settings → Manage Data so a copy is kept safe in Drive.'];
+  if(syncRun && driveState==='busy') return ['busy', 'Backing up…', 'busy', 'Backing up to Google Drive.'];
+  if(isOffline() || driveState==='offline') return ['warn', 'Offline · will back up', 'offline', "No internet right now. Everything is saved on this computer and will back up to Google Drive by itself when the internet is back."];
+  if(driveState==='paused') return ['warn', 'Backup paused', 'warn', driveProblem];
+  if(driveState==='error') return ['warn', 'Backup paused', 'warn', driveProblem];
+  if(localChangedSinceSync()) return drive.auto
+    ? ['warn', 'Backing up soon', 'warn', 'Saved on this computer. It goes to Google Drive within a minute.']
+    : ['warn', 'Backup paused', 'warn', "Saved on this computer. Automatic backup is off, so tap Back up now to copy it to Google Drive."];
+  return ['ok', 'Backed up', 'ok', 'Saved on this computer and in Google Drive.'];
+}
+function refreshBadge(){
+  const el = document.getElementById('safe-badge');
+  if(!el) return;
+  const [tone, label, icon, why] = badgeState();
+  el.className = 'safe-badge ' + tone;
+  el.innerHTML = `<span class="sb-icon">${BADGE_ICONS[icon]}</span><span class="sb-text">${label}</span>`;
+  el.title = why;
+  el.setAttribute('aria-label', label + '. ' + why + ' Tap for details.');
+  const detail = document.getElementById('safety-detail-status');
+  if(detail) detail.innerHTML = safetyStatusHtml();
+  refreshDriveStatus();
+}
+function safetyStatusHtml(){
+  const [tone, label, , why] = badgeState();
+  return `<div class="safety-status ${tone}"><strong>${escapeHtml(label)}</strong><span>${escapeHtml(why)}</span></div>`;
+}
+function openSafetyDetails(){
+  const row = (k, v)=> `<div class="safety-row"><span>${k}</span><b>${v}</b></div>`;
+  const body = `
+    <div id="safety-detail-status">${safetyStatusHtml()}</div>
+    <div class="safety-rows">
+      ${row('Last saved on this computer', escapeHtml(fmtWhen(docMeta.savedAt) || 'Nothing saved yet'))}
+      ${row('Last Google Drive backup', escapeHtml(drive.lastBackupAt ? fmtWhen(drive.lastBackupAt) + (drive.lastSize ? ' · ' + fmtSize(drive.lastSize) : '') : 'Never'))}
+      ${row('Last downloaded backup file', escapeHtml(drive.lastDownloadAt ? fmtWhen(drive.lastDownloadAt) : 'Never'))}
+      ${row('Google Drive folder', drive.folderId ? '📁 ' + escapeHtml(drive.folderPath || 'Chosen folder') : 'Not set up')}
+      ${drive.account ? row('Google account', escapeHtml(drive.account)) : ''}
+      ${row('This computer', escapeHtml(DEVICE_NAME))}
+    </div>
+    <div class="modal-actions" style="flex-wrap:wrap;">
+      <button type="button" class="btn ghost" style="margin-right:auto;" onclick="openSettingsModal('sync')">Manage Data…</button>
+      <button type="button" class="btn ghost" onclick="exportBackup()">⬇ Download backup file</button>
+      ${driveSetUp() ? `<button type="button" class="btn rust" data-signin onclick="backupNowClick()">Back up now</button>` : ''}
+    </div>`;
+  document.getElementById('modal-root').innerHTML = modalShell('Is my data safe?', body);
+}
+function fmtSize(n){ return n < 1024 ? n + ' bytes' : n < 1048576 ? Math.round(n/1024) + ' KB' : (n/1048576).toFixed(1) + ' MB'; }
+function backupNowClick(){
+  if(!driveSetUp()){ openSettingsModal('sync'); return; }
+  if(isOffline()){ toast("No internet right now. It will back up by itself when the internet is back."); return; }
+  withSignIn(()=>{
+    syncNow('manual', { force:true }).then(()=>{
+      if(driveState==='ok') toast('Backed up to Google Drive');
+      else if(driveProblem) toast(driveProblem, 6000);
+    });
+  });
 }
 
 // A toast with a button (e.g. Undo) that stays up a little longer.
@@ -1280,13 +1629,13 @@ function toastAction(msg, label, fn, ms){
   wrap.appendChild(el);
   setTimeout(()=>{ el.remove(); }, ms || 10000);
 }
-function toast(msg){
+function toast(msg, ms){
   const wrap = document.getElementById('toast-wrap');
   const el = document.createElement('div');
   el.className = 'toast';
   el.textContent = msg;
   wrap.appendChild(el);
-  setTimeout(()=>{ el.remove(); }, 2600);
+  setTimeout(()=>{ el.remove(); }, ms || 2600);
 }
 
 /* =========================================================
@@ -1688,8 +2037,7 @@ function setTab(id){
   currentTab = id;
   render();
 }
-/* Browser Back / Forward: every page has its own address (#animals, #settings…).
-   Inside the Google Workspace link, google.script.history does the same for the outer page. */
+/* Browser Back / Forward: every page has its own address (#animals, #settings…). */
 var ROUTE_NAMES = { dashboard:'home', breeding:'reproduction' };
 var ROUTE_TABS = ['dashboard','animals','pairs','pastures','health','breeding','summary','settings'];
 function tabToRoute(id){ return ROUTE_NAMES[id] || id; }
@@ -1699,14 +2047,9 @@ function routeToTab(hash){
   if(named) return named;
   return ROUTE_TABS.includes(h) ? h : 'dashboard';
 }
-function gasHistory(){ return hostedInWorkspace && google.script && google.script.history ? google.script.history : null; }
 function pushRoute(id){
   const route = tabToRoute(id);
-  try{
-    const gh = gasHistory();
-    if(gh) gh.push({ tab:id }, null, route);
-    else if(location.hash.slice(1) !== route) history.pushState({ tab:id }, '', '#' + route);
-  }catch(e){}
+  try{ if(location.hash.slice(1) !== route) history.pushState({ tab:id }, '', '#' + route); }catch(e){}
 }
 function routeTo(id){
   if(typeof closeModal==='function') closeModal();
@@ -1718,18 +2061,9 @@ function routeTo(id){
 }
 window.addEventListener('popstate', e=>{ routeTo((e.state && e.state.tab) || routeToTab(location.hash)); });
 (function initRoute(){
-  const gh = gasHistory();
-  const start = hash=>{
-    const tab = routeToTab(hash);
-    if(tab!==currentTab){ currentTab = tab; if(storageReady) render(); }
-  };
-  if(gh){
-    try{ gh.setChangeHandler(e=> routeTo((e && e.state && e.state.tab) || routeToTab(e && e.location && e.location.hash))); }catch(e){}
-    try{ google.script.url.getLocation(loc=> start(loc && loc.hash)); }catch(e){}
-  } else {
-    start(location.hash);
-    try{ history.replaceState({ tab:currentTab }, '', '#' + tabToRoute(currentTab)); }catch(e){}
-  }
+  const tab = routeToTab(location.hash);
+  if(tab!==currentTab){ currentTab = tab; if(storageReady) render(); }
+  try{ history.replaceState({ tab:currentTab }, '', '#' + tabToRoute(currentTab)); }catch(e){}
 })();
 function goHome(){
   if(typeof closeModal==='function') closeModal();
@@ -3052,504 +3386,330 @@ function modalShell(title, bodyHtml){
   </div>`;
 }
 
-/* ---------- Google Drive sync ---------- */
-var DRIVE_SCRIPT_VERSION = 3;
-// The Workspace script has its own version: 4 added choosing the data folder and Drive backups; 5 the Rangebook tab icon.
-var WORKSPACE_SCRIPT_VERSION = 6;
-// Merge logic shared by both Apps Script backends: replay one device's changes (base -> local) onto the current file.
-var GAS_MERGE_SRC = `const KEYS_ = {
-  animals: function (r) { return r.id; },
-  events: function (r) { return r.id; },
-  breeding: function (r) { return r.id; },
-  pastures: function (r) { return r.id; },
-  breeds: function (r) { return String((r && r.name) || r || '').toLowerCase(); },
-  vaccines: function (r) { return String(r).toLowerCase(); },
-  tagColors: function (r) { return String((r && r.letter) || '').toUpperCase(); }
-};
-
-// Apply one device's changes (base -> local) on top of the current file.
-function merge_(base, local, current) {
-  const out = {};
-  Object.keys(KEYS_).forEach(function (name) {
-    const keyFn = KEYS_[name];
-    const key = function (r) { const k = keyFn(r); return (k === undefined || k === null || k === '') ? 'json:' + JSON.stringify(r) : String(k); };
-    const b = base[name] || [], l = local[name] || [], c = current[name] || [];
-    const baseMap = {}; b.forEach(function (r) { baseMap[key(r)] = JSON.stringify(r); });
-    const localKeys = {}; l.forEach(function (r) { localKeys[key(r)] = true; });
-    const order = [], result = {};
-    c.forEach(function (r) { const k = key(r); if (!(k in result)) order.push(k); result[k] = r; });
-    Object.keys(baseMap).forEach(function (k) { if (!localKeys[k]) delete result[k]; });
-    l.forEach(function (r) {
-      const k = key(r);
-      if (!(k in baseMap) || baseMap[k] !== JSON.stringify(r)) { if (!(k in result)) order.push(k); result[k] = r; }
-    });
-    out[name] = order.filter(function (k) { return k in result; }).map(function (k) { return result[k]; });
-  });
-  return out;
-}`;
-function driveScriptSource(secret){
-  return `/**
- * Rangebook — Google Drive sync backend (version ${DRIVE_SCRIPT_VERSION}).
- * Paste this into a new Apps Script project (script.new), then
- * Deploy > New deployment > Web app, Execute as "Me",
- * Who has access "Anyone". Paste the Web app URL into Rangebook.
- * Updating an existing script? Deploy > Manage deployments > Edit (pencil)
- * > Version: New version > Deploy — the URL stays the same.
- *
- * All data is stored in one JSON file in this Google account's Drive.
- * Saves from several people are merged one at a time under a lock,
- * so nobody's changes overwrite anyone else's.
- * The secret below was generated by Rangebook — don't change it.
- */
-const SECRET = ${JSON.stringify(secret)};
-const FILE_NAME = 'rangebook-herd-data.json';
-const VERSION = ${DRIVE_SCRIPT_VERSION};
-
-function getOrCreateFile_() {
-  const files = DriveApp.getFilesByName(FILE_NAME);
-  if (files.hasNext()) return files.next();
-  return DriveApp.createFile(FILE_NAME, '{}', MimeType.PLAIN_TEXT);
-}
-
-function json_(obj) {
-  return ContentService.createTextOutput(JSON.stringify(obj))
-    .setMimeType(ContentService.MimeType.JSON);
-}
-
-function parse_(text) {
-  try { return JSON.parse(text || '{}') || {}; } catch (err) { return {}; }
-}
-
-${GAS_MERGE_SRC}
-function doGet(e) {
-  if (!e || !e.parameter || e.parameter.secret !== SECRET) return json_({ error: 'unauthorized' });
-  if (e.parameter.ping) return json_({ rangebook: VERSION });
-  return ContentService.createTextOutput(getOrCreateFile_().getBlob().getDataAsString())
-    .setMimeType(ContentService.MimeType.JSON);
-}
-
-function doPost(e) {
-  let body;
-  try { body = JSON.parse(e.postData.contents); } catch (err) { return json_({ error: 'bad request' }); }
-  if (body.secret !== SECRET) return json_({ error: 'unauthorized' });
-  if (typeof body.data !== 'string') return json_({ error: 'bad request' });
-  const lock = LockService.getScriptLock();
-  lock.waitLock(30000);
-  try {
-    const file = getOrCreateFile_();
-    if (typeof body.base === 'string') {
-      const merged = JSON.stringify(merge_(parse_(body.base), parse_(body.data), parse_(file.getBlob().getDataAsString())));
-      file.setContent(merged);
-      return json_({ ok: true, merged: merged });
-    }
-    file.setContent(body.data);
-    return json_({ ok: true });
-  } finally {
-    lock.releaseLock();
-  }
-}
-`;
-}
-var DEFAULT_APP_URL = 'https://natt368.github.io/Herd-Tracker/index.html';
-function workspaceScriptSource(){
-  const appUrl = /^https?:$/.test(location.protocol) && !hostedInWorkspace ? location.href.split('#')[0].split('?')[0] : DEFAULT_APP_URL;
-  return `/**
- * Rangebook — Google Workspace edition.
- * Serves the Rangebook app inside your Google Workspace and keeps the herd
- * data in one file in this account's Drive. Everyone signs in with their
- * own Google account; nobody outside your organization can open it.
- *
- * Setup: paste this into a new Apps Script project (script.new) while signed
- * into your Workspace account, save, then Deploy > New deployment > Web app,
- * Execute as "Me", Who has access "Anyone within <your domain>" > Deploy.
- * Open the Web app URL — that's the link to bookmark and share with your crew.
- *
- * The app itself loads from APP_URL, so updates published there show up
- * automatically. A copy is kept in Drive in case that site is unreachable.
- */
-const APP_URL = ${JSON.stringify(appUrl)};
-const FILE_NAME = 'rangebook-herd-data.json';
-const APP_CACHE_NAME = 'rangebook-app-cache.html';
-const BACKUP_FOLDER_NAME = 'Rangebook Backups';
-const AUTO_BACKUPS_KEPT = 100;
-const VERSION = ${WORKSPACE_SCRIPT_VERSION};
-
-function getOrCreate_(name, initial) {
-  const files = DriveApp.getFilesByName(name);
-  if (files.hasNext()) return files.next();
-  return DriveApp.createFile(name, initial, MimeType.PLAIN_TEXT);
-}
-
-function appHtml_() {
-  const props = PropertiesService.getScriptProperties();
-  try {
-    const res = UrlFetchApp.fetch(APP_URL, { muteHttpExceptions: true });
-    if (res.getResponseCode() === 200) {
-      const html = res.getContentText();
-      const hash = Utilities.base64Encode(Utilities.computeDigest(Utilities.DigestAlgorithm.MD5, html));
-      if (props.getProperty('appHash') !== hash) {
-        getOrCreate_(APP_CACHE_NAME, '').setContent(html);
-        props.setProperty('appHash', hash);
-      }
-      return html;
-    }
-  } catch (err) {}
-  return getOrCreate_(APP_CACHE_NAME, '<p>Rangebook could not be loaded. Try again in a minute.</p>').getBlob().getDataAsString();
-}
-
-// The browser-tab icon (the Rangebook horseshoe), published next to the app.
-const FAVICON_URL = APP_URL.substring(0, APP_URL.lastIndexOf('/') + 1) + 'favicon.png';
-
-function doGet() {
-  return HtmlService.createHtmlOutput(appHtml_())
-    .setTitle('Rangebook — Herd Management')
-    .setFaviconUrl(FAVICON_URL)
-    .addMetaTag('viewport', 'width=device-width, initial-scale=1');
-}
-
-${GAS_MERGE_SRC}
-
-// The herd data file. Remembered by ID, so it keeps working after it's moved to another folder.
-function dataFile_() {
-  const props = PropertiesService.getScriptProperties();
-  const id = props.getProperty('dataFileId');
-  if (id) {
-    try { const f = DriveApp.getFileById(id); if (!f.isTrashed()) return f; } catch (err) {}
-  }
-  const file = getOrCreate_(FILE_NAME, '{}');
-  props.setProperty('dataFileId', file.getId());
-  return file;
-}
-
-function dataFolder_() {
-  const parents = dataFile_().getParents();
-  return parents.hasNext() ? parents.next() : DriveApp.getRootFolder();
-}
-
-function folderInfo_(folder) {
-  return { id: folder.getId(), name: folder.getName(), url: folder.getUrl() };
-}
-
-// Only the script's owner can browse their Drive folders or move the data file.
-function requireOwner_() {
-  if (Session.getActiveUser().getEmail() !== Session.getEffectiveUser().getEmail()) {
-    throw new Error('Only ' + Session.getEffectiveUser().getEmail() + ' can change where the data is saved.');
-  }
-}
-
-function rbListFolders(folderId) {
-  requireOwner_();
-  const root = DriveApp.getRootFolder();
-  const folder = folderId ? DriveApp.getFolderById(folderId) : root;
-  const folders = [];
-  const it = folder.getFolders();
-  while (it.hasNext() && folders.length < 300) {
-    const f = it.next();
-    if (f.getName() !== BACKUP_FOLDER_NAME) folders.push(folderInfo_(f));
-  }
-  folders.sort(function (a, b) { return a.name.toLowerCase() < b.name.toLowerCase() ? -1 : 1; });
-  const parents = folder.getParents();
-  const isRoot = folder.getId() === root.getId();
-  return { folder: folderInfo_(folder), parentId: !isRoot && parents.hasNext() ? parents.next().getId() : null, folders: folders };
-}
-
-// Move the data file into a folder, given its ID or a Drive folder link.
-function rbSetFolder(folderIdOrLink) {
-  requireOwner_();
-  const text = String(folderIdOrLink || '').trim();
-  let id = text;
-  if (text.indexOf('/folders/') >= 0) id = text.split('/folders/')[1];
-  else if (text.indexOf('id=') >= 0) id = text.split('id=')[1];
-  id = id.split(/[/?&#]/)[0];
-  if (!id) throw new Error('That is not a Google Drive folder link.');
-  let folder;
-  try { folder = id === 'root' ? DriveApp.getRootFolder() : DriveApp.getFolderById(id); }
-  catch (err) { throw new Error("Couldn't open that folder. Check the link, and that " + Session.getEffectiveUser().getEmail() + ' can edit it.'); }
-  const lock = LockService.getScriptLock();
-  lock.waitLock(30000);
-  try {
-    dataFile_().moveTo(folder);
-  } finally {
-    lock.releaseLock();
-  }
-  return folderInfo_(folder);
-}
-
-function backupFolder_(create) {
-  const parent = dataFolder_();
-  const found = parent.getFoldersByName(BACKUP_FOLDER_NAME);
-  if (found.hasNext()) return found.next();
-  return create ? parent.createFolder(BACKUP_FOLDER_NAME) : null;
-}
-
-// Save a dated copy of the herd data in the "Rangebook Backups" folder next to the data file.
-// Automatic backups are skipped when nothing has changed, and only the newest AUTO_BACKUPS_KEPT are kept.
-function rbBackup(auto) {
-  const lock = LockService.getScriptLock();
-  lock.waitLock(30000);
-  try {
-    const props = PropertiesService.getScriptProperties();
-    const content = dataFile_().getBlob().getDataAsString();
-    const hash = Utilities.base64Encode(Utilities.computeDigest(Utilities.DigestAlgorithm.MD5, content));
-    if (auto && props.getProperty('backupHash') === hash) {
-      return { skipped: true, at: props.getProperty('backupAt'), name: props.getProperty('backupName') };
-    }
-    const folder = backupFolder_(true);
-    const stamp = Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyy-MM-dd HH-mm-ss');
-    const name = (auto ? 'rangebook-auto-backup ' : 'rangebook-backup ') + stamp + '.json';
-    folder.createFile(Utilities.newBlob(content, MimeType.PLAIN_TEXT, name));
-    const at = new Date().toISOString();
-    props.setProperties({ backupHash: hash, backupAt: at, backupName: name });
-    if (auto) {
-      const autos = [];
-      const it = folder.searchFiles("title contains 'rangebook-auto-backup' and trashed = false");
-      while (it.hasNext()) autos.push(it.next());
-      autos.sort(function (a, b) { return a.getName() < b.getName() ? 1 : -1; });
-      autos.slice(AUTO_BACKUPS_KEPT).forEach(function (f) { f.setTrashed(true); });
-    }
-    return { skipped: false, at: at, name: name, folderUrl: folder.getUrl() };
-  } finally {
-    lock.releaseLock();
-  }
-}
-
-function rbLoad() {
-  return dataFile_().getBlob().getDataAsString();
-}
-
-// Every save gets a version stamp (rev), with when and by whom, so each device can tell
-// whether it has the latest herd. The file's own last-updated time is part of the rev,
-// so a file restored or edited outside Rangebook also counts as a new version.
-function status_(file) {
-  const props = PropertiesService.getScriptProperties();
-  return {
-    rev: (props.getProperty('dataRev') || '0') + ':' + file.getLastUpdated().getTime(),
-    savedAt: props.getProperty('dataSavedAt') || file.getLastUpdated().toISOString(),
-    savedBy: props.getProperty('dataSavedBy') || '',
-    animals: Number(props.getProperty('dataAnimals') || 0)
-  };
-}
-
-function save_(localJson, baseJson) {
-  const parse = function (t) { try { return JSON.parse(t || '{}') || {}; } catch (err) { return {}; } };
-  const file = dataFile_();
-  const current = file.getBlob().getDataAsString();
-  const mergedObj = merge_(parse(baseJson), parse(localJson), parse(current));
-  const merged = JSON.stringify(mergedObj);
-  if (merged !== current) {
-    file.setContent(merged);
-    const props = PropertiesService.getScriptProperties();
-    props.setProperties({
-      dataRev: String(Number(props.getProperty('dataRev') || 0) + 1),
-      dataSavedAt: new Date().toISOString(),
-      dataSavedBy: Session.getActiveUser().getEmail() || '',
-      dataAnimals: String((mergedObj.animals || []).length)
-    });
-  }
-  return { file: file, merged: merged };
-}
-
-function rbSave(localJson, baseJson) {
-  const lock = LockService.getScriptLock();
-  lock.waitLock(30000);
-  try {
-    return save_(localJson, baseJson).merged;
-  } finally {
-    lock.releaseLock();
-  }
-}
-
-// Same as rbSave, but also returns the version stamp of what was saved.
-function rbSync(localJson, baseJson) {
-  const lock = LockService.getScriptLock();
-  lock.waitLock(30000);
-  try {
-    const out = save_(localJson, baseJson);
-    const st = status_(out.file);
-    st.data = out.merged;
-    return st;
-  } finally {
-    lock.releaseLock();
-  }
-}
-
-// The herd with its version stamp. The stamp is read first: if a save lands in between,
-// the device holds newer data under an older stamp and simply loads again next time.
-function rbLoadRev() {
-  const file = dataFile_();
-  const st = status_(file);
-  st.data = file.getBlob().getDataAsString();
-  return st;
-}
-
-function rbStatus() {
-  return status_(dataFile_());
-}
-
-function rbInfo() {
-  const props = PropertiesService.getScriptProperties();
-  const user = Session.getActiveUser().getEmail(), owner = Session.getEffectiveUser().getEmail();
-  const backups = backupFolder_(false);
-  return {
-    url: ScriptApp.getService().getUrl(), user: user, owner: owner, canManage: !!user && user === owner, version: VERSION,
-    file: { name: dataFile_().getName(), url: dataFile_().getUrl() }, folder: folderInfo_(dataFolder_()),
-    backup: { at: props.getProperty('backupAt'), name: props.getProperty('backupName'), folderUrl: backups ? backups.getUrl() : null }
-  };
-}
-`;
-}
-function copyWorkspaceScript(){ copyText(workspaceScriptSource(), 'Workspace script copied — paste it into a new Apps Script project'); }
-function pendingDriveSecret(){
-  let secret = null;
-  try{ secret = localStorage.getItem('herd-drive-pending-secret'); }catch(e){}
-  if(!secret){
-    const bytes = new Uint8Array(18);
-    crypto.getRandomValues(bytes);
-    secret = Array.from(bytes, b=>b.toString(16).padStart(2,'0')).join('');
-    try{ localStorage.setItem('herd-drive-pending-secret', secret); }catch(e){}
-  }
-  return secret;
-}
-// A connection code bundles the Web app URL and secret so another device can connect in one paste.
-function encodeDriveCode(cfg){
-  const b64 = btoa(unescape(encodeURIComponent(JSON.stringify({ u: cfg.url, s: cfg.secret }))));
-  return 'rb1.' + b64.replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');
-}
-function decodeDriveCode(text){
-  const m = String(text||'').trim().match(/(?:^|[#&]drive=)(rb1\.[A-Za-z0-9_-]+)/);
-  if(!m) return null;
-  try{
-    const b64 = m[1].slice(4).replace(/-/g,'+').replace(/_/g,'/');
-    const obj = JSON.parse(decodeURIComponent(escape(atob(b64))));
-    return obj && obj.u ? { url: obj.u, secret: obj.s || '' } : null;
-  }catch(e){ return null; }
-}
-function driveShareLink(){
-  if(!/^https?:$/.test(location.protocol)) return '';
-  return location.href.split('#')[0] + '#drive=' + encodeDriveCode(driveConfig);
-}
-async function copyText(text, okMsg){
-  try{
-    await navigator.clipboard.writeText(text);
-  }catch(e){
-    const ta = document.createElement('textarea');
-    ta.value = text; ta.style.position='fixed'; ta.style.opacity='0';
-    document.body.appendChild(ta); ta.select();
-    const ok = document.execCommand('copy');
-    document.body.removeChild(ta);
-    if(!ok){ toast('Copy failed — select the text and copy it manually'); return; }
-  }
-  toast(okMsg);
-}
-function copyDriveScript(){
-  const connected = driveConfig && driveConfig.url;
-  copyText(driveScriptSource(connected ? driveConfig.secret : pendingDriveSecret()),
-    connected ? 'Updated script copied — paste it over the old code, then deploy a new version' : 'Script copied — paste it into the new Apps Script project');
-}
-function copyDriveCode(){ copyText(encodeDriveCode(driveConfig), 'Connection code copied'); }
-function copyDriveLink(){ copyText(driveShareLink(), 'Link copied'); }
-
-/* The Drive sync panel lives inline in Settings → Manage Data (no popup).
-   openDriveModal() jumps there and re-draws it; drivePanelHtml() is what viewSettings shows. */
-function openDriveModal(){
+/* ---------- Settings → Manage Data ----------
+   Google Drive backup (account, folder, options, restore) and backup files. The panel is drawn
+   from driveUi, so a re-draw of the Settings page never loses the folder browser or a list. */
+var driveUi = { view:'', busy:false, msg:'', trail:[], folders:[], found:[], backups:[], confirmId:'' };
+function openDriveModal(){ refreshDrivePanel() || openSettingsModal('sync'); }
+function refreshDrivePanel(){
   const panel = document.getElementById('drive-panel');
-  if(!panel){ openSettingsModal('sync'); return; }
+  if(!panel) return false;
+  const typed = [...panel.querySelectorAll('input[id]')].filter(i=> i.type==='text' && i.value).map(i=>[i.id, i.value]);
   panel.innerHTML = drivePanelHtml();
-  if(hostedInWorkspace) loadWorkspaceInfo(true);
+  typed.forEach(([id, v])=>{ const el = document.getElementById(id); if(el && el.value!==v && id!=='drive-name') el.value = v; });
+  return true;
+}
+function refreshDriveStatus(){
+  const el = document.getElementById('drive-status-box');
+  if(el) el.innerHTML = driveStatusHtml();
+}
+var BOX = 'background:var(--surface-2); padding:12px 14px; border-radius:var(--radius); margin-bottom:16px;';
+function driveStatusHtml(){
+  const lines = [];
+  if(drive.lastBackupAt) lines.push(`Last Google Drive backup: <b>${escapeHtml(fmtWhen(drive.lastBackupAt))}</b>${drive.lastSize ? ' · ' + fmtSize(drive.lastSize) : ''}`);
+  if(docMeta.savedAt && docMeta.savedAt!==OLD_STAMP) lines.push(`Last saved on this computer: <b>${escapeHtml(fmtWhen(docMeta.savedAt))}</b>`);
+  return `${safetyStatusHtml()}
+    ${lines.length ? `<p class="hint" style="margin:8px 0 0;">${lines.join('<br>')}</p>` : ''}
+    ${driveSetUp() ? `<div style="display:flex; gap:8px; flex-wrap:wrap; margin-top:10px;">
+      <button type="button" class="btn rust sm" data-signin onclick="backupNowClick()">Back up now</button>
+      <button type="button" class="btn ghost sm" data-signin onclick="openRestoreList()">Restore from Google Drive…</button>
+    </div>` : ''}`;
 }
 function drivePanelHtml(){
-  if(hostedInWorkspace) return workspacePanelHtml();
-  const cfg = driveConfig || { url:'', secret:'' };
-  const connected = !!cfg.url;
-  const statusColor = driveStatus==='error' ? 'var(--danger)' : (connected ? 'var(--pasture)' : 'var(--ink-faint)');
-  const statusLabel = !connected ? 'Not connected' : (driveStatus==='error' ? 'Connected — last sync failed' : 'Connected to Google Drive');
-  const status = `
-    <div class="field" style="margin-bottom:16px;">
-      <div style="display:flex; align-items:center; gap:8px; margin-bottom:4px;">
-        <span style="width:9px;height:9px;border-radius:50%; background:${statusColor}; display:inline-block; flex-shrink:0;"></span>
-        <strong style="font-size:13.5px;">${statusLabel}</strong>
-      </div>
-      <p class="hint" style="margin:0;">${connected
-        ? `Changes save to one file in your Google Drive, shared by every connected device.${driveLastSync ? ' Last synced '+driveLastSync.toLocaleTimeString()+'.' : ''}`
-        : `Keep your herd data in your Google Drive so it's the same on every device.`}</p>
-    </div>`;
-  const stepStyle = 'margin:0; padding-left:18px; font-size:12.5px; color:var(--ink-soft); line-height:1.7;';
-  if(connected && driveScriptVersion===null){
-    driveCheckVersion().then(v=>{ if(v && v < DRIVE_SCRIPT_VERSION && document.getElementById('drive-update-slot')) openDriveModal(); });
-  }
-  const updateNotice = (connected && driveScriptVersion && driveScriptVersion < DRIVE_SCRIPT_VERSION) ? `
-    <div class="field" style="background:var(--tag-bg); padding:12px 14px; border-radius:var(--radius); margin-bottom:16px;">
-      <label style="margin-bottom:6px; color:var(--tag-dark);">Update your Drive script</label>
-      <p class="hint" style="margin:0 0 8px; color:var(--ink-soft);">${driveScriptVersion===1 ? "Your script is an older version. If two people save at the same moment, one person's change can be lost." : "Your script is an older version that doesn't share tag colours between devices yet."} Updating takes a minute and keeps the same URL and code:</p>
-      <ol style="${stepStyle}">
-        <li><button type="button" class="btn ghost sm" onclick="copyDriveScript()">Copy updated script</button></li>
-        <li>Open your project at <a href="https://script.google.com" target="_blank" rel="noopener" style="color:var(--rust); font-weight:600;">script.google.com</a>, replace all the code with the copied script, and save.</li>
-        <li>Deploy → Manage deployments → ✎ Edit → Version: <b>New version</b> → Deploy.</li>
-      </ol>
-    </div>` : '';
-  const body = connected ? `
-    ${status}
-    <div id="drive-update-slot"></div>
-    ${updateNotice}
-    <div class="field" style="background:var(--surface-2); padding:12px 14px; border-radius:var(--radius); margin-bottom:16px;">
-      <label style="margin-bottom:6px;">Connect another device</label>
-      <p class="hint" style="margin:0 0 8px;">On the other device, open Rangebook, go to Settings → Manage Data, and paste this code.</p>
-      <input type="text" readonly class="mono" style="width:100%; font-size:12px;" value="${escapeHtml(encodeDriveCode(cfg))}" onfocus="this.select()">
-      <div style="display:flex; gap:8px; margin-top:8px; flex-wrap:wrap;">
-        <button type="button" class="btn ghost sm" onclick="copyDriveCode()">Copy code</button>
-        ${driveShareLink() ? `<button type="button" class="btn ghost sm" onclick="copyDriveLink()">Copy link</button>` : ''}
-      </div>
-      <p class="hint" style="margin:8px 0 0;">Anyone with this code can read and change your herd data — only share it with your own devices or people you trust.</p>
+  const id = clientId();
+  const fromConfig = !!(window.RANGEBOOK_CONFIG && window.RANGEBOOK_CONFIG.googleClientId) && !drive.clientId;
+  const connected = !!drive.account;
+  return `
+    <div class="field" id="drive-status-box" style="margin-bottom:16px;">${driveStatusHtml()}</div>
+    <div class="field" style="${BOX}">
+      <label style="margin-bottom:6px;">Google Drive backup</label>
+      ${!id ? `<p class="hint" style="margin:0;">Backups to Google Drive need a Client ID from Google first. It only takes a few minutes. See <b>How to get a Client ID</b> below.</p>`
+      : `<p class="hint" style="margin:0 0 8px;">${connected ? `Google account: <b>${escapeHtml(drive.account)}</b>` : 'Not connected yet.'}${drive.folderId ? `<br>Folder: 📁 <b>${escapeHtml(drive.folderPath || 'Chosen folder')}</b>` : connected ? '<br>No folder chosen yet.' : ''}</p>
+        <p class="hint" style="margin:0 0 10px;">Range Book backs up one minute after your last change, loads the newest backup when it opens, and keeps a dated copy for each day. Several computers and phones can share the same folder.</p>
+        <div style="display:flex; gap:8px; flex-wrap:wrap;">
+          ${!connected || !tokenValid() ? `<button type="button" class="btn rust sm" data-signin onclick="driveConnectClick()">${connected ? 'Connect again' : 'Connect Google Drive'}</button>` : ''}
+          ${connected ? `<button type="button" class="btn ghost sm" data-signin onclick="driveAction(()=>browseFolder(null))">Choose folder…</button>
+          <button type="button" class="btn ghost sm" data-signin onclick="driveAction(()=>findBackups(false))">Load from Google Drive</button>
+          <button type="button" class="btn ghost sm" style="color:var(--danger);" onclick="disconnectDrive()">Disconnect</button>` : ''}
+        </div>
+        <div id="drive-browser">${driveBrowserHtml()}</div>`}
     </div>
-    ${backupSectionHtml()}
-    <div class="modal-actions">
-      <button type="button" class="btn ghost" style="margin-right:auto; color:var(--danger);" onclick="disconnectDrive()">Disconnect</button>
-      <button type="button" class="btn ghost" onclick="testDriveConnection()">Test connection</button>
-    </div>
-  ` : `
-    ${status}
-    <form onsubmit="saveDriveConnection(event)">
-      <div class="field" style="background:var(--surface-2); padding:12px 14px; border-radius:var(--radius); margin-bottom:16px;">
-        <label style="margin-bottom:6px;">Already set up on another device?</label>
-        <p class="hint" style="margin:0;">Paste its connection code below and tap Connect.</p>
+    ${connected ? `<div class="field" style="${BOX}">
+      <label style="margin-bottom:8px;">Backup options</label>
+      <label class="check-row"><input type="checkbox" ${drive.auto ? 'checked' : ''} onchange="setDriveOpt('auto', this.checked)"> Back up automatically after changes</label>
+      <label class="check-row"><input type="checkbox" ${drive.loadOnOpen ? 'checked' : ''} onchange="setDriveOpt('loadOnOpen', this.checked)"> Load the latest backup from Google Drive when the app opens</label>
+      <div style="display:flex; gap:12px; flex-wrap:wrap; margin-top:10px;">
+        <div style="flex:0 0 150px;"><label style="font-size:11px;">Daily copies to keep</label><input type="number" min="1" max="365" value="${Number(drive.keep)||14}" onchange="setDriveOpt('keep', this.value)"></div>
+        <div style="flex:1; min-width:160px;"><label style="font-size:11px;">Backup name</label><input type="text" id="drive-name" value="${escapeHtml(drive.name||'Herd')}" maxlength="40" onchange="setDriveOpt('name', this.value)"></div>
       </div>
-      <div class="field" style="background:var(--pasture-bg); padding:12px 14px; border-radius:var(--radius); margin-bottom:16px;">
-        <label style="margin-bottom:6px; color:var(--pasture-dark);">Google Workspace account (e.g. you@yourcompany.com)?</label>
-        <p class="hint" style="margin:0 0 6px; color:var(--ink-soft);">Run Rangebook inside your Workspace instead. Your crew signs in with their company Google accounts, with no codes or passwords to share.</p>
-        <ol style="${stepStyle}">
-          <li><button type="button" class="btn ghost sm" onclick="copyWorkspaceScript()">Copy Workspace script</button></li>
-          <li>Open <a href="https://script.new" target="_blank" rel="noopener" style="color:var(--rust); font-weight:600;">script.new</a> signed into your Workspace account, replace the code with the copied script, and save.</li>
-          <li>Deploy → New deployment → type <b>Web app</b> → Execute as <b>Me</b> → Who has access <b>Anyone within your organization</b> → Deploy, and allow access.</li>
-          <li>Open the <b>Web app URL</b> it gives you. Bookmark it and send it to your crew. That's your Rangebook from now on.</li>
+      <p class="hint" style="margin:6px 0 0;">Files are called <span class="mono">${escapeHtml(mainFileName())}</span>, plus one dated copy per day.</p>
+    </div>` : ''}
+    <div class="field" style="${BOX}">
+      <label style="margin-bottom:6px;">Client ID</label>
+      ${fromConfig ? `<p class="hint" style="margin:0 0 6px;">This site already has a Client ID, so there's nothing to do here.</p>` : ''}
+      <div style="display:flex; gap:8px;">
+        <input type="text" id="drive-client-id" class="mono" style="flex:1; min-width:0; font-size:12px;" placeholder="123456789-abc.apps.googleusercontent.com" value="${escapeHtml(drive.clientId || '')}">
+        <button type="button" class="btn ghost sm" onclick="saveClientId()">Save</button>
+      </div>
+      <details style="margin-top:8px; font-size:12.5px; color:var(--ink-soft);">
+        <summary style="cursor:pointer;">How to get a Client ID</summary>
+        <p class="hint" style="margin:8px 0 6px;">Done once by whoever looks after the website. Every computer that opens it then gets the ID.</p>
+        <ol style="margin:0; padding-left:18px; line-height:1.7;">
+          <li>Open <a href="https://console.cloud.google.com/projectcreate" target="_blank" rel="noopener" style="color:var(--rust); font-weight:600;">Google Cloud</a> and create a project, for example “Range Book”.</li>
+          <li>Go to <b>APIs &amp; Services → Library</b>, find <b>Google Drive API</b> and click <b>Enable</b>.</li>
+          <li>Go to <b>OAuth consent screen</b>: choose <b>External</b>, name the app “Range Book” and add your email. Under <b>Test users</b>, add the Google account of everyone who will use Range Book. (If everyone is in one Google Workspace, you can choose <b>Internal</b> and skip test users.)</li>
+          <li>Go to <b>Credentials → Create credentials → OAuth client ID</b>. Type <b>Web application</b>. Under <b>Authorized JavaScript origins</b>, add <span class="mono">${escapeHtml(location.origin && location.origin!=='null' ? location.origin : 'https://natt368.github.io')}</span>. Click <b>Create</b>.</li>
+          <li>Copy the <b>Client ID</b> (it ends in <span class="mono">.apps.googleusercontent.com</span>) and paste it above. To give it to every computer at once, put it in the site's <span class="mono">config.js</span> file.</li>
         </ol>
-      </div>
-      <div class="field" style="background:var(--surface-2); padding:12px 14px; border-radius:var(--radius); margin-bottom:16px;">
-        <label style="margin-bottom:6px;">Personal Google account? One-time setup (~2 minutes)</label>
-        <ol style="${stepStyle}">
-          <li><button type="button" class="btn ghost sm" onclick="copyDriveScript()">Copy script</button></li>
-          <li>Open <a href="https://script.new" target="_blank" rel="noopener" style="color:var(--rust); font-weight:600;">script.new</a> (signed into the Google account to store data in), replace the code with the copied script, and save.</li>
-          <li>Deploy → New deployment → type <b>Web app</b> → Execute as <b>Me</b> → Who has access <b>Anyone</b> → Deploy, and allow access.</li>
-          <li>Copy the Web app URL and paste it below.</li>
-        </ol>
-      </div>
-      <div class="field"><label>Web app URL or connection code</label><input type="text" id="drive-connect-input" name="connect" autocomplete="off" placeholder="https://script.google.com/macros/s/…/exec  or  rb1.…"></div>
-      <details style="margin-bottom:6px; font-size:12.5px; color:var(--ink-soft);">
-        <summary style="cursor:pointer;">Have the secret from your script? (optional)</summary>
-        <div class="field" style="margin-top:10px;"><label>Secret</label><input type="text" id="drive-secret-input" name="secret" autocomplete="off" placeholder="SECRET from your script"></div>
+        <p class="hint" style="margin:8px 0 0;">The first time you sign in, Google shows a warning that it hasn't verified the app. That's expected for your own app: choose <b>Continue</b>.</p>
       </details>
-      <div id="drive-connect-error" style="display:none; background:var(--danger-bg); color:var(--ink); border:1px solid var(--danger); border-radius:var(--radius); padding:10px 12px; font-size:12.5px; line-height:1.55; margin-top:10px;"></div>
-      <div class="modal-actions">
-        <button type="submit" class="btn rust">Connect</button>
-      </div>
-    </form>
-    ${backupSectionHtml()}
-  `;
-  return body;
+    </div>
+    ${backupSectionHtml()}`;
 }
-/* ---------- Backup: export / import ----------
-   Moves a whole herd between copies of the app (e.g. from the github.io site
-   into the Workspace edition). Imports go through the normal save, so a
-   synced herd shares them with everyone. */
+function driveBrowserHtml(){
+  const u = driveUi;
+  if(!u.view) return u.msg ? `<p class="hint" style="margin:10px 0 0;">${u.msg}</p>` : '';
+  const close = `<button type="button" class="btn ghost sm" onclick="closeDriveBrowser()">Close</button>`;
+  const wrap = (head, inner, foot)=> `<div class="drive-browser"><div class="db-head">${head}</div><div class="db-list">${inner}</div>${foot ? `<div class="db-foot">${foot}</div>` : ''}</div>${u.msg ? `<p class="hint" style="margin:8px 0 0;">${u.msg}</p>` : ''}`;
+  if(u.busy) return wrap('<strong>Google Drive</strong>', '<p class="hint" style="margin:0; padding:12px;">Loading…</p>', close);
+  if(u.view==='browse'){
+    const crumbs = [`<button type="button" class="db-crumb" onclick="driveAction(()=>browseFolder(null))">Google Drive</button>`]
+      .concat(u.trail.map((t, i)=> `<button type="button" class="db-crumb" onclick="driveAction(()=>browseCrumb(${i}))">${escapeHtml(t.name)}</button>`)).join('<span class="db-sep">›</span>');
+    const rows = u.folders.length
+      ? u.folders.map((f, i)=> `<button type="button" class="db-row" onclick="driveAction(()=>openFolderRow(${i}))"><span>${f.shared ? '🗄️' : '📁'} ${escapeHtml(f.name)}</span><span class="db-open">Open ›</span></button>`).join('')
+      : `<p class="hint" style="margin:0; padding:12px;">${u.trail.length ? 'No folders in here.' : 'Nothing found.'}</p>`;
+    const here = u.trail.length;
+    return wrap(`<div class="db-crumbs">${crumbs}</div>`, rows, `
+      ${here ? `<button type="button" class="btn rust sm" onclick="driveAction(useBrowsedFolder)">Use this folder</button>
+        <span class="db-new"><input type="text" id="new-folder-name" placeholder="New folder name" maxlength="80"><button type="button" class="btn ghost sm" onclick="driveAction(createFolderHere)">New folder</button></span>` : ''}
+      ${close}`);
+  }
+  if(u.view==='found'){
+    const rows = u.found.map((f, i)=> `<button type="button" class="db-row" onclick="driveAction(()=>useFoundBackup(${i}))"><span><b>${escapeHtml(f.path)}</b><br><span class="hint">${escapeHtml(f.name)} · saved ${escapeHtml(fmtWhen(f.savedAt))}${f.device ? ' on ' + escapeHtml(f.device) : ''}</span></span><span class="db-open">Use ›</span></button>`).join('');
+    return wrap('<strong>Range Book backups found in your Google Drive</strong>', rows || '<p class="hint" style="margin:0; padding:12px;">None found.</p>', close);
+  }
+  if(u.view==='restore'){
+    const kind = k=> k==='main' ? 'Latest backup' : k==='daily' ? 'Daily copy' : 'Saved before a restore';
+    const rows = u.backups.map(f=>{
+      const p = f.appProperties || {};
+      const when = fmtWhen(fileSavedAt(f));
+      if(u.confirmId===f.id) return `<div class="db-row db-confirm"><span>Replace all records with the backup saved <b>${escapeHtml(when)}</b>${p.device ? ' on ' + escapeHtml(p.device) : ''}?</span>
+        <span style="display:flex; gap:6px; flex-wrap:wrap;"><button type="button" class="btn danger sm" onclick="driveAction(()=>restoreFromDrive('${f.id}'))">Replace all records</button><button type="button" class="btn ghost sm" onclick="driveUi.confirmId=''; refreshDrivePanel();">Cancel</button></span></div>`;
+      return `<div class="db-row"><span><b>${escapeHtml(when)}</b> · ${kind(p.rangebook)}<br><span class="hint">${escapeHtml(p.device || 'Unknown computer')}${f.size ? ' · ' + fmtSize(Number(f.size)) : ''}</span></span>
+        <button type="button" class="btn ghost sm" onclick="driveUi.confirmId='${f.id}'; refreshDrivePanel();">Restore</button></div>`;
+    }).join('');
+    return wrap('<strong>Restore from Google Drive</strong>', rows || '<p class="hint" style="margin:0; padding:12px;">No backups in this folder yet.</p>', close);
+  }
+  return '';
+}
+function closeDriveBrowser(){ driveUi.view = ''; driveUi.msg = ''; driveUi.confirmId = ''; refreshDrivePanel(); }
+// Run a Drive step for the panel, showing "Loading…" and a plain message if it fails.
+function driveAction(fn){
+  const run = ()=>{
+    driveUi.msg = '';
+    Promise.resolve().then(fn).catch(e=>{
+      driveUi.busy = false;
+      driveUi.msg = escapeHtml(driveErrorText(e));
+      refreshDrivePanel();
+    });
+  };
+  if(tokenValid()) run(); else withSignIn(run);
+}
+function driveErrorText(e){
+  const c = e && e.code;
+  if(c==='offline' || isOffline()) return "No internet right now. Try again when you're back online.";
+  if(c==='auth' || c==='signin' || c==='popup' || c==='scope') return "Google sign-in didn't finish. Tap Connect and allow access to Google Drive.";
+  if(c==='notfound' || c==='forbidden') return "That Google Drive item can't be opened. It may have been moved, deleted or unshared.";
+  if(c==='bad-file') return "That backup file couldn't be read.";
+  return "Google Drive didn't answer just now. Try again in a moment.";
+}
+function driveConnectClick(){
+  if(!clientId()){ toast('Paste the Client ID first, then tap Save'); return; }
+  if(!gisReady()){ loadGis().catch(()=>{}); toast('Google sign-in is still loading — tap Connect again in a moment'); return; }
+  requestToken(drive.account ? '' : 'select_account').then(afterConnect).catch(e=>{
+    if(e.code==='replaced') return;
+    toast(e.code==='popup' ? 'The sign-in window was blocked. Allow pop-ups for this site, then tap Connect again.' : "Google sign-in didn't finish. Tap Connect to try again.");
+  });
+}
+async function afterConnect(){
+  try{
+    const about = await (await gapi(`${DRIVE_API}/about?fields=user(emailAddress,displayName)`)).json();
+    drive.account = (about.user && (about.user.emailAddress || about.user.displayName)) || drive.account || 'Google account';
+    saveDriveCfg();
+    hideSigninBanner();
+    if(drive.folderId){ driveState = 'idle'; refreshDrivePanel(); toast('Connected to Google Drive'); syncNow('connect'); return; }
+    await findBackups(true);
+  }catch(e){ driveUi.msg = escapeHtml(driveErrorText(e)); refreshDrivePanel(); }
+}
+// A new computer finds its backup folder by itself: one backup → use it, several → choose, none → pick a folder.
+async function findBackups(auto){
+  driveUi.view = 'found'; driveUi.busy = true; refreshDrivePanel();
+  const files = await driveList(`${tagQuery('main')} and trashed=false`);
+  const found = [];
+  for(const f of files){
+    const parent = (f.parents||[])[0];
+    let trail = [];
+    try{ trail = parent ? await folderTrail(parent) : []; }catch(e){}
+    const p = f.appProperties || {};
+    found.push({ folderId: parent, trail, path: trailText(trail) || 'Google Drive', name: f.name, savedAt: fileSavedAt(f), device: p.device || '' });
+  }
+  found.sort((a, b)=> String(b.savedAt).localeCompare(String(a.savedAt)));
+  driveUi.busy = false; driveUi.found = found;
+  if(found.length===1 && (auto || found[0].folderId===drive.folderId)) return useFoundBackup(0);
+  if(!found.length){
+    if(auto || !drive.folderId){
+      await browseFolder(null);
+      driveUi.msg = "No Range Book backup in your Google Drive yet. Choose the folder to keep the backups in (or make a new one).";
+      refreshDrivePanel();
+      return;
+    }
+    driveUi.view = ''; driveUi.msg = 'No Range Book backup found in your Google Drive.';
+  }
+  refreshDrivePanel();
+}
+function useFoundBackup(i){
+  const f = driveUi.found[i];
+  if(f && f.folderId) return useFolder(f.folderId, trailText(f.trail) || f.path);
+}
+async function browseFolder(entry){
+  driveUi.view = 'browse'; driveUi.busy = true; driveUi.confirmId = ''; refreshDrivePanel();
+  if(!entry){
+    driveUi.trail = [];
+    const root = await driveGetMeta('root', 'id,name');
+    let shared = [];
+    try{ shared = ((await (await gapi(`${DRIVE_API}/drives?pageSize=100&fields=drives(id,name)`)).json()).drives || []).map(d=>({ id:d.id, name:d.name, shared:true })); }catch(e){}
+    driveUi.folders = [{ id: root.id, name: 'My Drive' }].concat(shared);
+  } else {
+    driveUi.folders = (await driveList(`'${entry.id}' in parents and mimeType='application/vnd.google-apps.folder' and trashed=false`, { orderBy:'name' }))
+      .map(f=>({ id:f.id, name:f.name }));
+  }
+  driveUi.busy = false;
+  refreshDrivePanel();
+}
+function openFolderRow(i){
+  const f = driveUi.folders[i];
+  if(!f) return;
+  driveUi.trail = driveUi.trail.concat([f]);
+  return browseFolder(f);
+}
+function browseCrumb(i){
+  driveUi.trail = driveUi.trail.slice(0, i + 1);
+  return browseFolder(driveUi.trail[i]);
+}
+function browsedPath(){ const t = driveUi.trail; return (t[0] && t[0].shared ? 'Shared drives › ' : '') + t.map(x=> x.name).join(' › '); }
+function useBrowsedFolder(){
+  const cur = driveUi.trail[driveUi.trail.length - 1];
+  if(cur) return useFolder(cur.id, browsedPath());
+}
+async function createFolderHere(){
+  const input = document.getElementById('new-folder-name');
+  const name = input ? input.value.trim() : '';
+  const cur = driveUi.trail[driveUi.trail.length - 1];
+  if(!name || !cur){ toast('Type a name for the new folder'); return; }
+  const f = await (await gapi(`${DRIVE_API}/files?supportsAllDrives=true&fields=id,name`, { method:'POST', headers:{ 'Content-Type':'application/json' },
+    body: JSON.stringify({ name, mimeType:'application/vnd.google-apps.folder', parents:[cur.id] }) })).json();
+  driveUi.trail = driveUi.trail.concat([{ id:f.id, name:f.name }]);
+  await browseFolder(driveUi.trail[driveUi.trail.length - 1]);
+  toast('Folder made. Tap “Use this folder” to keep the backups there.');
+}
+// Point this computer at a folder. The next sync loads, merges or uploads as the sync rules say.
+async function useFolder(id, path){
+  drive.folderId = id; drive.folderPath = path || ''; drive.mainId = ''; drive.lastRemote = ''; drive.lastLocal = ''; drive.lastDaily = '';
+  saveDriveCfg();
+  driveUi.view = ''; driveUi.busy = false; driveUi.msg = `Using 📁 <b>${escapeHtml(path || 'this folder')}</b>. Syncing…`;
+  driveState = 'idle';
+  refreshDrivePanel(); refreshBadge();
+  const had = state.animals.length;
+  await syncNow('folder', { force: hasData() });
+  driveUi.msg = driveState==='ok'
+    ? (had || !state.animals.length ? 'Backed up to this folder.' : `Loaded the backup from Google Drive: ${state.animals.length} animals.`)
+    : escapeHtml(driveProblem || 'Saved here. It will back up when it can.');
+  refreshDrivePanel();
+}
+function disconnectDrive(){
+  Object.assign(drive, { account:'', folderId:'', folderPath:'', mainId:'', lastRemote:'', lastLocal:'', lastDaily:'' });
+  saveDriveCfg();
+  tok = { access:'', exp:0 }; saveTok();
+  clearTimeout(backupTimer); backupTimer = null;
+  driveState = 'idle'; driveProblem = ''; driveUi = { view:'', busy:false, msg:'', trail:[], folders:[], found:[], backups:[], confirmId:'' };
+  hideSigninBanner();
+  refreshDrivePanel(); refreshBadge();
+  toast('Disconnected. Your records stay on this computer.');
+}
+function setDriveOpt(key, value){
+  if(key==='keep') value = Math.min(365, Math.max(1, Math.round(Number(value) || 14)));
+  if(key==='name') value = String(value||'').trim().slice(0, 40) || 'Herd';
+  drive[key] = value;
+  if(key==='name') drive.lastDaily = '';
+  saveDriveCfg();
+  if(key==='auto' && value && localChangedSinceSync()) scheduleBackup();
+  if(key==='name') refreshDrivePanel();
+  refreshBadge();
+}
+function saveClientId(){
+  const el = document.getElementById('drive-client-id');
+  const v = el ? el.value.trim() : '';
+  if(v && !/\.apps\.googleusercontent\.com$/.test(v)){ toast('That doesn’t look like a Client ID. It ends in .apps.googleusercontent.com'); return; }
+  drive.clientId = v;
+  saveDriveCfg();
+  tokenClient = null;
+  if(clientId()) loadGis().catch(()=>{});
+  refreshDrivePanel(); refreshBadge();
+  toast(v ? 'Client ID saved. Now tap Connect Google Drive.' : 'Client ID cleared');
+}
+async function openRestoreList(){
+  if(!driveSetUp()) return;
+  driveAction(async ()=>{
+    driveUi.view = 'restore'; driveUi.busy = true; driveUi.confirmId = ''; refreshDrivePanel();
+    const files = await driveList(`'${drive.folderId}' in parents and (${tagQuery('main')} or ${tagQuery('daily')} or ${tagQuery('copy')}) and trashed=false`);
+    driveUi.backups = files.sort((a, b)=> fileSavedAt(b).localeCompare(fileSavedAt(a)));
+    driveUi.busy = false;
+    refreshDrivePanel();
+    const box = document.getElementById('drive-browser');
+    if(box) box.scrollIntoView({ block:'nearest' });
+  });
+}
+async function restoreFromDrive(fileId){
+  const f = driveUi.backups.find(x=> x.id===fileId);
+  driveUi.busy = true; refreshDrivePanel();
+  const doc = await driveDownload(fileId);
+  const when = fmtWhen(fileSavedAt(f));
+  await restoreDoc(doc, `the backup saved ${when}`);
+  driveUi.view = ''; driveUi.busy = false; driveUi.msg = `Restored the backup saved <b>${escapeHtml(when)}</b>. The other computers will take this version too.`;
+  refreshDrivePanel();
+}
+/* A deliberate restore replaces all records. replacedAt = now, so the other computers take the restored
+   version instead of merging the old records back in. The change log is kept and the backup's added to it. */
+async function restoreDoc(incoming, label){
+  if(saveTimer) await flushSave(); else stampChanges();
+  const now = new Date().toISOString();
+  const cur = buildDoc();
+  if(driveSetUp() && !isOffline()){
+    // Keep what was here as a copy in the folder first, in case the restore was a mistake.
+    try{
+      const { bytes, mime } = await backupBytes(cur);
+      const stamp = localDay() + ' ' + new Date().toTimeString().slice(0, 5).replace(':', '.');
+      await driveUpload('', { name: `Range Book backup - ${backupName()} - before restore ${stamp}.json.gz`, mimeType: mime, parents: [drive.folderId],
+        appProperties: { rangebook:'copy', savedAt: cur.savedAt, device: DEVICE_NAME, name: backupName() } }, bytes, mime);
+    }catch(e){}
+  }
+  const next = fillDoc(JSON.parse(JSON.stringify(incoming)));
+  ALL_COLS.forEach(col=>{
+    const keep = new Set(next[col].map(r=> colKey(col, r)));
+    (cur[col]||[]).forEach(r=>{ const k = colKey(col, r); if(k && !keep.has(k)) next.tombs[col][k] = now; });
+  });
+  next.log = mergeLogs(cur.log, next.log);
+  next.log.push({ id: uid(), at: now, device: DEVICE_NAME, action:'restored', col:'', key:'', what:'backup', label: 'Restored ' + label });
+  next.savedAt = now; next.replacedAt = now;
+  applyDoc(next);
+  try{ await writeLocalDoc(); localSaveFailed = false; }catch(e){ localSaveFailed = true; }
+  render(); refreshBadge();
+  if(driveSetUp()) await syncNow('restore', { force:true });
+}
+
+/* ---------- Backup files ----------
+   The same gzip JSON as the Drive backup, for people without Drive and for extra safety.
+   Restoring also reads plain JSON: older exports and the rangebook-herd-data.json file. */
 var pendingImport = null;
 function herdCounts(d){
   const n = (k, w)=>{ const c = (d[k]||[]).length; return c + ' ' + w + (c===1 ? '' : 's'); };
@@ -3558,379 +3718,86 @@ function herdCounts(d){
 function backupSectionHtml(){
   return `
     <div class="field" style="border-top:1px solid var(--line-soft); padding-top:16px; margin-top:18px;">
-      <label style="margin-bottom:6px;">Move or back up your data</label>
-      <p class="hint" style="margin:0 0 10px;">This herd has <span id="backup-counts">${herdCounts(normalizeState(state))}</span>. <b>Export</b> saves it all to a backup file. <b>Import</b> loads a backup file into this herd. Use it to move data from one copy of Rangebook to another.</p>
+      <label style="margin-bottom:6px;">Backup file</label>
+      <p class="hint" style="margin:0 0 10px;">This herd has <span id="backup-counts">${herdCounts(normalizeState(state))}</span>. <b>Download backup file</b> saves everything to one file on this computer. <b>Restore backup file</b> loads one back, or moves a herd from another copy of Range Book.${drive.lastDownloadAt ? ` Last downloaded ${escapeHtml(fmtWhen(drive.lastDownloadAt))}.` : ''}</p>
       <div style="display:flex; gap:8px; flex-wrap:wrap; margin-bottom:10px;">
-        <button type="button" class="btn ghost sm" onclick="exportBackup()">⬇ Export backup file</button>
-        <button type="button" class="btn ghost sm" onclick="copyBackup()">Copy backup as text</button>
+        <button type="button" class="btn ghost sm" onclick="exportBackup()">⬇ Download backup file</button>
       </div>
-      <p class="hint" style="margin:0 0 6px;">Import a backup file (from Export, or the <span class="mono">rangebook-herd-data.json</span> file in Google Drive):</p>
-      <input type="file" accept=".json,application/json,text/plain" onchange="handleBackupFile(event)">
-      <details style="margin-top:8px; font-size:12.5px; color:var(--ink-soft);">
-        <summary style="cursor:pointer;">Paste backup text instead</summary>
-        <textarea id="backup-paste" style="width:100%; margin-top:8px; font-size:11.5px;" class="mono" rows="4" placeholder="Paste the text from “Copy backup as text”"></textarea>
-        <button type="button" class="btn ghost sm" style="margin-top:6px;" onclick="loadPastedBackup()">Load pasted backup</button>
-      </details>
+      <p class="hint" style="margin:0 0 6px;">Restore backup file (a Range Book backup, <span class="mono">.json.gz</span> or <span class="mono">.json</span>, including the older <span class="mono">rangebook-herd-data.json</span>):</p>
+      <input type="file" accept=".gz,.json,application/gzip,application/json,text/plain" onchange="handleBackupFile(event)">
       <div id="backup-preview"></div>
     </div>`;
 }
-function backupPayload(){
-  return JSON.stringify({ app:'rangebook', format:1, exportedAt:new Date().toISOString(), data: normalizeState(state) });
-}
-function exportBackup(){
-  const blob = new Blob([backupPayload()], { type:'application/json' });
+async function exportBackup(){
+  if(saveTimer) await flushSave(); else stampChanges();
+  const { bytes, mime } = await backupBytes(buildDoc());
+  const blob = new Blob([bytes], { type: mime });
   const a = document.createElement('a');
   a.href = URL.createObjectURL(blob);
-  a.download = 'rangebook-backup-' + todayStr() + '.json';
+  a.download = `Range Book backup - ${backupName()} - ${localDay()}.json${mime==='application/gzip' ? '.gz' : ''}`;
   document.body.appendChild(a);
   a.click();
   document.body.removeChild(a);
   setTimeout(()=>URL.revokeObjectURL(a.href), 1000);
-  toast('Backup downloaded — if nothing appeared, use “Copy backup as text”');
-}
-function copyBackup(){ copyText(backupPayload(), 'Backup copied — paste it into the other Rangebook'); }
-function parseBackup(text){
-  let obj;
-  try{ obj = JSON.parse(String(text||'').trim()); }catch(e){ return null; }
-  if(!obj || typeof obj!=='object') return null;
-  const data = (obj.app==='rangebook' && obj.data) ? obj.data : obj;
-  if(!['animals','events','breeding','pastures','breeds','vaccines'].some(k=>Array.isArray(data[k]))) return null;
-  return normalizeState(data);
+  drive.lastDownloadAt = new Date().toISOString();
+  saveDriveCfg();
+  toast('Backup file downloaded (' + fmtSize(bytes.length) + ')');
 }
 function handleBackupFile(evt){
   const file = evt.target.files && evt.target.files[0];
   if(!file) return;
-  const reader = new FileReader();
-  reader.onload = ()=>previewImport(parseBackup(reader.result));
-  reader.onerror = ()=>previewImport(null);
-  reader.readAsText(file);
+  file.arrayBuffer().then(buf=> parseBackupBytes(new Uint8Array(buf))).then(previewImport).catch(()=> previewImport(null));
 }
-function loadPastedBackup(){
-  const el = document.getElementById('backup-paste');
-  previewImport(parseBackup(el ? el.value : ''));
-}
-function previewImport(data){
+function previewImport(raw){
   const box = document.getElementById('backup-preview');
   if(!box) return;
-  pendingImport = data;
-  if(!data){
-    box.innerHTML = `<p class="hint" style="color:var(--danger); margin:10px 0 0;">That isn't a Rangebook backup. Use a file from “Export backup file” or the rangebook-herd-data.json file from Google Drive.</p>`;
+  pendingImport = raw ? fillDoc(raw) : null;
+  if(!pendingImport){
+    box.innerHTML = `<p class="hint" style="color:var(--danger); margin:10px 0 0;">That isn't a Range Book backup. Choose a file made with “Download backup file”, a backup from the Google Drive folder, or the rangebook-herd-data.json file.</p>`;
     return;
   }
+  const when = pendingImport.savedAt && pendingImport.savedAt!==OLD_STAMP ? ` saved ${escapeHtml(fmtWhen(pendingImport.savedAt))}` : '';
   box.innerHTML = `
     <div style="background:var(--surface-2); border:1px solid var(--line); border-radius:var(--radius); padding:12px 14px; margin-top:10px; font-size:12.5px;">
-      <div style="margin-bottom:8px;"><b>Backup contains:</b> ${herdCounts(data)}.</div>
+      <div style="margin-bottom:8px;"><b>Backup${when}:</b> ${herdCounts(pendingImport)}.</div>
       <div style="display:flex; gap:8px; flex-wrap:wrap;">
         <button type="button" class="btn rust sm" onclick="applyImport('merge')">Add to current herd</button>
-        <button type="button" class="btn ghost sm" id="import-replace-btn" style="color:var(--danger);" onclick="applyImport('replace')">Replace current herd</button>
+        <button type="button" class="btn ghost sm" id="import-replace-btn" style="color:var(--danger);" onclick="applyImport('replace')">Replace all records</button>
       </div>
-      <p class="hint" style="margin:8px 0 0;"><b>Add</b> keeps everything already here and brings in the backup's records (records that exist in both are updated from the backup). <b>Replace</b> makes this herd exactly match the backup.</p>
+      <p class="hint" style="margin:8px 0 0;"><b>Add</b> keeps everything already here and brings in the backup's records (for a record in both, the newer version wins). <b>Replace</b> makes this herd exactly match the backup, on every computer.</p>
     </div>`;
 }
-function applyImport(mode){
+async function applyImport(mode){
   if(!pendingImport) return;
   if(mode==='replace'){
     const btn = document.getElementById('import-replace-btn');
-    // Two taps instead of confirm(): dialogs can be blocked when the app runs inside Google's frame.
     if(btn && !btn.dataset.armed){
       btn.dataset.armed = '1';
-      btn.textContent = 'Tap again to replace everything';
+      const when = pendingImport.savedAt && pendingImport.savedAt!==OLD_STAMP ? ' saved ' + fmtWhen(pendingImport.savedAt) : '';
+      btn.textContent = `Replace all records with the backup${when}? Tap again`;
       btn.classList.remove('ghost'); btn.classList.add('danger'); btn.style.color = '';
       return;
     }
-    applyLoadedState(pendingImport);
+    const incoming = pendingImport; pendingImport = null;
+    await restoreDoc(incoming, 'a backup file');
   } else {
-    // Treat every backup record as a change made here, applied on top of the current herd.
-    applyLoadedState(mergeStates({}, pendingImport, state));
+    const incoming = pendingImport; pendingImport = null;
+    if(saveTimer) await flushSave(); else stampChanges();
+    const r = mergeDocs(buildDoc(), incoming);
+    applyDoc(r.doc);
+    docMeta.savedAt = new Date().toISOString();
+    logChange('added', 'animals', 'import:' + docMeta.savedAt, 'Added records from a backup file', docMeta.savedAt);
+    try{ await writeLocalDoc(); localSaveFailed = false; }catch(e){ localSaveFailed = true; }
+    render();
+    confirmOnDrive('Backup');
   }
   const summary = herdCounts(normalizeState(state));
-  pendingImport = null;
-  saveState();
-  render();
   const countsEl = document.getElementById('backup-counts');
   if(countsEl) countsEl.textContent = summary;
   const box = document.getElementById('backup-preview');
-  if(box) box.innerHTML = `<p class="hint" style="color:var(--pasture-dark); margin:10px 0 0;"><b>Imported.</b> This herd now has ${summary}.${driveEnabled() ? ' Syncing to Google Drive…' : ''}</p>`;
-  toast(mode==='replace' ? 'Herd replaced from backup' : 'Backup added to herd');
-}
-
-// Catch the usual wrong-link mistakes before contacting Google.
-function driveUrlProblem(url){
-  if(/\/dev(\?.*)?$/.test(url)) return `That's the <b>test (/dev)</b> link, which only works for you while signed in. Use the <b>Web app URL</b> from Deploy → Manage deployments — it ends in <span class="mono">/exec</span>.`;
-  if(!/\/exec(\?.*)?$/.test(url)) return `That looks like the <b>script editor</b> link, not the web app. In Apps Script click <b>Deploy → Manage deployments</b> and copy the <b>Web app URL</b> — it ends in <span class="mono">/exec</span>.`;
-  return null;
-}
-function showDriveConnectError(html){
-  const el = document.getElementById('drive-connect-error');
-  if(!el) return;
-  el.innerHTML = html;
-  el.style.display = html ? 'block' : 'none';
-  if(html) el.scrollIntoView({ block:'nearest' });
-}
-var DRIVE_ERROR_HELP = {
-  unauthorized: `<b>The script's secret doesn't match this browser.</b> This happens when the script was copied in a different browser or from the downloaded file version of the app.<br>
-    <b>Fix:</b> in your Apps Script, find the line <span class="mono">const SECRET = "…"</span>, copy the text between the quotes into the <b>Secret</b> box above, and tap Connect again.`,
-  blocked: `<b>Google blocked the request.</b> In Apps Script open <b>Deploy → Manage deployments</b>, click ✎ Edit, and check:
-    <ul style="margin:6px 0 0; padding-left:18px;">
-      <li>Type is <b>Web app</b> and Execute as is <b>Me</b>.</li>
-      <li>Who has access is exactly <b>Anyone</b> — not "Anyone with Google account" or only your organization.</li>
-      <li>Click <b>Deploy</b> after any change, and finish the "Authorize access" prompts.</li>
-    </ul>
-    If <b>Anyone</b> isn't in the list, your Google Workspace administrator has turned off public web apps. Set up the script with a personal Gmail account instead, or ask your admin to allow it.`,
-  'not-found': `<b>Google couldn't find that web app.</b> The link may be cut off, or that deployment was archived. Copy the Web app URL again from Deploy → Manage deployments.`,
-  script: `<b>The script ran into an error.</b> Make sure you replaced <i>all</i> the code in the project with the copied script, saved, and deployed a new version.`,
-  http: `<b>Google returned an error.</b> Wait a minute and try again. If it keeps happening, deploy a new version of the script.`,
-};
-// Last rbInfo answer from the Workspace script, so a re-draw of Settings doesn't blank the panel.
-var workspaceInfo = null, workspaceInfoAt = 0;
-function workspacePanelHtml(){
-  const statusColor = driveStatus==='error' ? 'var(--danger)' : 'var(--pasture)';
-  const info = workspaceInfo;
-  return `
-    <div class="field" style="margin-bottom:16px;">
-      <div style="display:flex; align-items:center; gap:8px; margin-bottom:4px;">
-        <span style="width:9px;height:9px;border-radius:50%; background:${statusColor}; display:inline-block; flex-shrink:0;"></span>
-        <strong style="font-size:13.5px;">${driveStatus==='error' ? 'Running in Google Workspace — last sync failed' : 'Running in Google Workspace'}</strong>
-      </div>
-      <p class="hint" style="margin:0;">Herd data is saved to Google Drive and shared with everyone who opens this app's link.${driveLastSync ? ' Last synced '+driveLastSync.toLocaleTimeString()+'.' : ''}</p>
-    </div>
-    <div id="workspace-update">${info ? workspaceUpdateHtml() : ''}</div>
-    <div id="workspace-storage">${info && driveScriptVersion >= 4 ? workspaceStorageHtml(info) : ''}</div>
-    ${backupSectionHtml()}
-    <div class="modal-actions">
-      <button type="button" class="btn ghost" onclick="testDriveConnection()">Test connection</button>
-    </div>`;
-}
-function workspaceUpdateHtml(){
-  if(!(driveScriptVersion < WORKSPACE_SCRIPT_VERSION)) return '';
-  return `
-      <div class="field" style="background:var(--tag-bg); padding:12px 14px; border-radius:var(--radius); margin-bottom:16px;">
-        <label style="margin-bottom:6px; color:var(--tag-dark);">Update your Workspace script</label>
-        <p class="hint" style="margin:0 0 8px; color:var(--ink-soft);">${driveScriptVersion < 4 ? 'Your script is an older version. Update it to choose which Drive folder the data is saved in, and to get automatic backups every minute.' : 'A new version of your script is ready: it stamps every save with a version, so each computer can tell it has the latest herd, and it makes backups work for large herds.'} Updating takes a minute and keeps the same link:</p>
-        <ol style="margin:0; padding-left:18px; font-size:12.5px; color:var(--ink-soft); line-height:1.7;">
-          <li><button type="button" class="btn ghost sm" onclick="copyWorkspaceScript()">Copy updated script</button></li>
-          <li>Open your project at <a href="https://script.google.com" target="_blank" rel="noopener" style="color:var(--rust); font-weight:600;">script.google.com</a>, replace all the code with the copied script, and save.</li>
-          <li>Deploy → Manage deployments → ✎ Edit → Version: <b>New version</b> → Deploy.</li>
-        </ol>
-      </div>`;
-}
-// Fetch folder/backup details for the Manage Data panel (at most every 30s unless forced).
-function loadWorkspaceInfo(force){
-  if(!hostedInWorkspace) return;
-  if(!force && workspaceInfo && Date.now() - workspaceInfoAt < 30000){ updateBackupLast(); return; }
-  workspaceInfoAt = Date.now();
-  gasCall('rbInfo').then(info=>{
-    workspaceInfo = info || {};
-    driveScriptVersion = (info && info.version) || 2;
-    if(driveScriptVersion >= 4) lastDriveBackup = info.backup || lastDriveBackup;
-    const upd = document.getElementById('workspace-update');
-    if(upd) upd.innerHTML = workspaceUpdateHtml();
-    const storage = document.getElementById('workspace-storage');
-    if(storage && driveScriptVersion >= 4){ storage.innerHTML = workspaceStorageHtml(info); updateBackupLast(); }
-  }).catch(()=>{});
-}
-/* Workspace edition (script v4+): choose the data folder, and dated backups in Drive. */
-var lastDriveBackup = null;
-function workspaceStorageHtml(info){
-  const box = 'background:var(--surface-2); padding:12px 14px; border-radius:var(--radius); margin-bottom:16px;';
-  const folder = info.folder || {};
-  const backupsLink = info.backup && info.backup.folderUrl
-    ? `<a href="${escapeHtml(info.backup.folderUrl)}" target="_blank" rel="noopener" style="color:var(--rust); font-weight:600;">Rangebook Backups</a>`
-    : '<b>Rangebook Backups</b>';
-  return `
-    <div class="field" style="${box}">
-      <label style="margin-bottom:6px;">Where the data is saved</label>
-      <p class="hint" style="margin:0 0 8px;">📁 <a href="${escapeHtml(folder.url||'#')}" target="_blank" rel="noopener" style="color:var(--rust); font-weight:600;">${escapeHtml(folder.name||'My Drive')}</a> › <span class="mono">${escapeHtml((info.file && info.file.name) || 'rangebook-herd-data.json')}</span></p>
-      ${info.canManage
-        ? `<button type="button" class="btn ghost sm" onclick="openFolderPicker('')">Change folder</button><div id="folder-picker"></div>`
-        : `<p class="hint" style="margin:0;">Only ${escapeHtml(info.owner||'the person who set up the script')} can change the folder.</p>`}
-    </div>
-    <div class="field" style="${box}">
-      <label style="margin-bottom:6px;">Drive backups</label>
-      <p class="hint" style="margin:0 0 8px;">While Rangebook is open, a dated copy of the herd is saved to ${backupsLink} (inside the data folder) every minute, whenever something has changed. The newest 100 automatic copies are kept. Copies made with <b>Back up now</b> are kept until you delete them. To restore one, download it from Drive and use <b>Import</b> below.</p>
-      <p class="hint" id="backup-last" style="margin:0 0 8px;"></p>
-      <button type="button" class="btn rust sm" onclick="backupNow(this)">Back up now</button>
-    </div>`;
-}
-function updateBackupLast(){
-  const el = document.getElementById('backup-last');
-  if(!el) return;
-  const b = lastDriveBackup;
-  el.innerHTML = b && b.at
-    ? `Last backup: <b>${escapeHtml(new Date(b.at).toLocaleString())}</b>${b.name ? ' · <span class="mono" style="font-size:11.5px;">'+escapeHtml(b.name)+'</span>' : ''}`
-    : 'No backups yet.';
-}
-function backupNow(btn){
-  if(btn){ btn.disabled = true; btn.textContent = 'Backing up…'; }
-  const done = ()=>{ if(btn){ btn.disabled = false; btn.textContent = 'Back up now'; } };
-  // Save any pending changes first so the backup includes them.
-  setDriveBusy(true);
-  driveSync().catch(()=>{})
-    .then(()=>gasCall('rbBackup', false))
-    .then(r=>{ lastDriveBackup = r; updateBackupLast(); backupDone(r); toast('Backed up to Google Drive'); })
-    .catch(e=>toast('Backup failed: ' + ((e && e.message) || 'error')))
-    .finally(()=>{ setDriveBusy(false); done(); });
-}
-/* The top sync button backs up straight away, without opening anything.
-   Sync settings, folder choice and restore live in Settings → Manage Data. */
-async function syncButtonClick(){
-  if(hostedInWorkspace){
-    if(driveScriptVersion === null) await driveCheckVersion();
-    if(driveScriptVersion >= 4){ backupNow(null); return; }
-    setDriveBusy(true);
-    try{ await driveSync(); toast('Synced. Update your Workspace script (Settings → Manage Data) to turn on backups.'); }
-    catch(e){ toast('Sync failed — check your connection'); }
-    finally{ setDriveBusy(false); }
-    return;
-  }
-  if(driveEnabled()){
-    setDriveBusy(true);
-    try{ await driveSync(); flashSyncCheck('Back up now · synced with Google Drive'); toast('Synced with Google Drive'); }
-    catch(e){ toast('Sync failed — check your connection'); }
-    finally{ setDriveBusy(false); }
-    return;
-  }
-  openSettingsModal('sync');
-  toast('Connect Google Drive to back up your herd');
-}
-function autoBackupToDrive(){
-  if(!hostedInWorkspace || !storageReady || !(driveScriptVersion >= 4)) return;
-  setDriveBusy(true);
-  gasCall('rbBackup', true)
-    .then(r=>{ lastDriveBackup = r; updateBackupLast(); backupDone(r); })
-    .catch(()=>{})
-    .finally(()=> setDriveBusy(false));
-}
-function backupDone(r){
-  const when = r && r.at ? new Date(r.at).toLocaleTimeString([], {hour:'numeric', minute:'2-digit'}) : '';
-  flashSyncCheck(`Back up now · last backup ${when}`);
-}
-setInterval(autoBackupToDrive, 60000);
-function openFolderPicker(folderId){
-  const el = document.getElementById('folder-picker');
-  if(!el) return;
-  el.innerHTML = '<p class="hint" style="margin:10px 0 0;">Loading folders…</p>';
-  gasCall('rbListFolders', folderId || '').then(res=>{
-    const id = v => escapeHtml(JSON.stringify(v));
-    const rowStyle = 'display:block; width:100%; text-align:left; padding:9px 12px; border:0; border-bottom:1px solid var(--line-soft); background:none; cursor:pointer; font:inherit; font-size:13px; color:var(--ink);';
-    el.innerHTML = `
-      <div style="border:1px solid var(--line-soft); border-radius:var(--radius); margin-top:10px; background:var(--surface); overflow:hidden;">
-        <div style="display:flex; align-items:center; gap:8px; padding:8px 10px; border-bottom:1px solid var(--line-soft); background:var(--surface-2);">
-          ${res.parentId ? `<button type="button" class="btn ghost sm" onclick="openFolderPicker(${id(res.parentId)})">‹ Up</button>` : ''}
-          <strong style="font-size:13px; flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">📁 ${escapeHtml(res.folder.name)}</strong>
-          <button type="button" class="btn rust sm" onclick="chooseDataFolder(${id(res.folder.id)}, this)">Save here</button>
-        </div>
-        <div style="max-height:220px; overflow:auto;">
-          ${res.folders.length
-            ? res.folders.map(f=>`<button type="button" class="folder-row" style="${rowStyle}" onclick="openFolderPicker(${id(f.id)})">📁 ${escapeHtml(f.name)} <span style="float:right; color:var(--ink-soft);">›</span></button>`).join('')
-            : '<p class="hint" style="margin:0; padding:10px 12px;">No folders inside. Tap <b>Save here</b> to use this one.</p>'}
-        </div>
-      </div>
-      <details style="margin-top:8px; font-size:12.5px; color:var(--ink-soft);">
-        <summary style="cursor:pointer;">Folder in a shared drive? Paste its link</summary>
-        <input type="text" id="folder-link" class="mono" style="width:100%; margin-top:8px; font-size:12px;" placeholder="https://drive.google.com/drive/folders/…">
-        <button type="button" class="btn ghost sm" style="margin-top:6px;" onclick="chooseDataFolder(document.getElementById('folder-link').value, this)">Move data here</button>
-      </details>
-      <p class="hint" id="folder-picker-error" style="margin:6px 0 0; color:var(--danger);"></p>`;
-  }).catch(e=>{ el.innerHTML = `<p class="hint" style="margin:10px 0 0; color:var(--danger);">${escapeHtml((e && e.message) || 'Could not list folders.')}</p>`; });
-}
-function chooseDataFolder(folderIdOrLink, btn){
-  if(!String(folderIdOrLink||'').trim()) return;
-  const label = btn && btn.textContent;
-  if(btn){ btn.disabled = true; btn.textContent = 'Moving…'; }
-  gasCall('rbSetFolder', folderIdOrLink).then(f=>{
-    toast('Herd data now saved in ' + f.name);
-    openDriveModal();
-  }).catch(e=>{
-    if(btn){ btn.disabled = false; btn.textContent = label; }
-    const err = document.getElementById('folder-picker-error');
-    if(err) err.textContent = (e && e.message) || 'Could not move the data file.';
-  });
-}
-function parseDriveInput(text, manualSecret){
-  const fromCode = decodeDriveCode(text);
-  if(fromCode) return fromCode;
-  const url = String(text||'').trim();
-  if(!/^https:\/\/script\.google(usercontent)?\.com\//.test(url)) return null;
-  return { url, secret: manualSecret || pendingDriveSecret() };
-}
-async function connectDrive(cfg){
-  const prevCfg = driveConfig;
-  persistDriveConfig(cfg);
-  try{
-    const parsed = await driveFetchState();
-    driveStatus = 'connected';
-    if(parsed && (parsed.animals || parsed.pastures || parsed.events || parsed.breeding)){
-      applyLoadedState(parsed);
-      try{ localStorage.setItem('herd-data', JSON.stringify(state)); }catch(e){}
-    } else {
-      await driveSaveState();
-      driveLastSync = new Date();
-    }
-    setSyncBase(JSON.stringify(normalizeState(state)));
-    try{ localStorage.removeItem('herd-drive-pending-secret'); }catch(e){}
-    return true;
-  }catch(e){
-    persistDriveConfig(prevCfg);
-    driveStatus = 'error';
-    return e.code || 'blocked';
-  }finally{
-    refreshDriveStatusUI();
-  }
-}
-async function saveDriveConnection(evt){
-  evt.preventDefault();
-  const f = evt.target;
-  showDriveConnectError('');
-  const cfg = parseDriveInput(f.connect.value, f.secret.value.trim());
-  if(!cfg){ showDriveConnectError(`Paste the <b>Web app URL</b> (starts with <span class="mono">https://script.google.com/</span> and ends in <span class="mono">/exec</span>) or a connection code from another device.`); return; }
-  const urlProblem = decodeDriveCode(f.connect.value) ? null : driveUrlProblem(cfg.url);
-  if(urlProblem){ showDriveConnectError(urlProblem); return; }
-  const submitBtn = f.querySelector('button[type="submit"]');
-  if(submitBtn){ submitBtn.disabled = true; submitBtn.textContent = 'Connecting…'; }
-  const result = await connectDrive(cfg);
-  if(result === true){
-    render();
-    toast('Connected to Google Drive');
-    return;
-  }
-  showDriveConnectError(DRIVE_ERROR_HELP[result] || DRIVE_ERROR_HELP.blocked);
-  if(result === 'unauthorized'){
-    const details = f.querySelector('details');
-    if(details) details.open = true;
-    if(f.secret) f.secret.focus();
-  }
-  if(submitBtn){ submitBtn.disabled = false; submitBtn.textContent = 'Connect'; }
-}
-// Opening a link like …#drive=rb1.… offers to connect this device.
-async function connectFromLinkIfPresent(){
-  const cfg = decodeDriveCode(location.hash);
-  if(!cfg) return;
-  history.replaceState(null, '', location.href.split('#')[0]);
-  if(driveConfig && driveConfig.url===cfg.url && driveConfig.secret===cfg.secret) return;
-  if(!confirm('Connect this device to the shared Google Drive herd data? Any data stored only on this device will be replaced.')) return;
-  persistDriveConfig(cfg);
-  toast('Connected to Google Drive');
-}
-function disconnectDrive(){
-  persistDriveConfig({ url:'', secret:'' });
-  setSyncBase(null);
-  driveStatus = 'idle';
-  refreshDriveStatusUI();
-  openDriveModal();
-  toast('Disconnected — data will now be stored on this device only');
-}
-async function testDriveConnection(){
-  try{
-    await driveFetchState();
-    driveStatus = 'connected';
-    toast('Connection OK');
-  }catch(e){
-    driveStatus = 'error';
-    toast('Connection failed — check your internet connection and the script deployment');
-  }
-  refreshDriveStatusUI();
-  openDriveModal();
+  if(box) box.innerHTML = `<p class="hint" style="color:var(--pasture-dark); margin:10px 0 0;"><b>Done.</b> This herd now has ${summary}.${driveSetUp() ? ' Backing up to Google Drive…' : ''}</p>`;
+  refreshBadge();
+  toast(mode==='replace' ? 'All records replaced from the backup' : 'Backup added to the herd');
 }
 
 /* ---------- Settings page ----------
@@ -3947,12 +3814,12 @@ function openSettingsModal(scrollTo){
     const el = key && document.getElementById('settings-' + key);
     if(el) el.scrollIntoView({ block:'start', behavior:'smooth' });
     else window.scrollTo({ top:0 });
-    if(key==='sync') loadWorkspaceInfo(false);
+    if(key==='sync' && clientId()) loadGis().catch(()=>{});
   }, 0);
 }
 function settingsToggle(key, open){
   if(open) settingsOpen.add(key); else settingsOpen.delete(key);
-  if(key==='sync' && open) loadWorkspaceInfo(false);
+  if(key==='sync' && open && clientId()) loadGis().catch(()=>{});
 }
 function settingsSection(key, icon, title, sub, count, body){
   return `<details class="settings-sec" id="settings-${key}" ${settingsOpen.has(key)?'open':''} ontoggle="settingsToggle('${key}', this.open)">
@@ -4021,7 +3888,7 @@ function viewSettings(){
           <div id="pasture-library-list">${renderPastureLibrary()}</div>
           ${recentMovesHtml()}
         </div>`)}
-      ${settingsSection('sync', '☁️', 'Manage Data', 'Google Drive sync, where the data is saved, backups, export and import', null, `
+      ${settingsSection('sync', '☁️', 'Manage Data', drive.folderId ? `Google Drive: 📁 ${escapeHtml(drive.folderPath || 'chosen folder')}${drive.account ? ' · ' + escapeHtml(drive.account) : ''}` : 'Google Drive backup, restore, and backup files', null, `
         <div id="drive-panel">${drivePanelHtml()}</div>`)}
       ${settingsSection('danger', '⚠️', '<span style="color:var(--danger);">Danger zone</span>', 'Reset all data', null, `
         <p class="hint" style="margin:0 0 12px;">Permanently deletes every animal, pasture, health record, and reproduction record stored in this app. This can't be undone.</p>
@@ -4085,6 +3952,8 @@ function performReset(){
   state.breeds = [];
   state.vaccines = [];
   selectedAnimalIds.clear();
+  // A reset replaces everything on purpose, so the other computers take the empty herd too.
+  docMeta.replacedAt = new Date().toISOString();
   saveState();
   closeModal();
   currentTab = 'dashboard';
@@ -5434,12 +5303,22 @@ document.addEventListener('keydown', function(e){
 ========================================================= */
 async function init(){
   render();
-  await connectFromLinkIfPresent();
   await loadState();
   if(promoteHeifersWithCalves().length) saveState();
   render();
+  refreshBadge();
+  // Google sign-in loads early so Connect and the sign-in renewal can open their window straight from a click.
+  if(clientId()) loadGis().catch(()=>{});
+  if(driveSetUp()){
+    if(drive.loadOnOpen) syncNow('open');
+    else if(localChangedSinceSync()) scheduleBackup();
+  }
 }
 init();
+// Offline: once opened online, the app opens and works without internet (sw.js).
+if('serviceWorker' in navigator && /^https?:$/.test(location.protocol)){
+  window.addEventListener('load', ()=>{ navigator.serviceWorker.register('sw.js').catch(()=>{}); });
+}
 </script>
 </body>
 </html>
