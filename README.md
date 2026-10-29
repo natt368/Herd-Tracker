@@ -10,7 +10,7 @@ Herd record keeping
 - Backs up one minute after the last change, loads the newest backup when the app opens, and keeps one dated copy per day (the last 14 by default).
 - Several computers and phones can share one folder (a shared drive works too). Changes made on two computers are combined record by record, so nothing entered on either is lost, and deletions stay deleted.
 - Before every upload, Range Book reads what is in Google Drive and merges it in first. It refuses an upload that would drop a record without a recorded delete, and checks the file reads back before sending it. Time stamps follow Google Drive's clock, so a computer with a wrong clock doesn't win or lose by mistake. Tabs on one computer take turns syncing and share each other's changes.
-- Settings → Manage Data → **Change log**: every record added, changed or deleted, and every restore, with when, which computer and which Google account. Searchable, and downloads as CSV.
+- Settings → Manage Data → **View change log** opens the change log on its own page: every record added, changed or deleted, and every restore, with when, which computer and which Google account. Searchable, and downloads as CSV.
 - Works without internet once the app has been opened online (`sw.js`). Changes back up by themselves when the internet returns.
 - The badge in the top bar always says whether the data is safe. Tap it for details, *Back up now* and *Download backup file*.
 - Settings → Manage Data: connect Google Drive, choose the folder, the backup options, *Restore from Google Drive…*, and download or restore a backup file.
