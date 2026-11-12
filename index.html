@@ -566,6 +566,22 @@
   .safety-row b{ text-align:right; overflow-wrap:anywhere; }
   .check-row{ display:flex !important; align-items:center; gap:8px; font-size:13px !important; font-weight:500 !important; text-transform:none !important; letter-spacing:0 !important; color:var(--ink) !important; margin:4px 0 !important; cursor:pointer; }
   .check-row input{ width:auto; margin:0; }
+  /* Import from scale head file (Settings → Manage Data). */
+  .scale-opts{ display:flex; gap:12px; flex-wrap:wrap; margin-bottom:10px; }
+  .scale-opts > div{ flex:1 1 160px; }
+  .scale-opts label{ font-size:11px; }
+  .scale-new{ background:var(--surface-2); padding:10px 12px; border-radius:var(--radius); margin-bottom:10px; }
+  .scale-table-wrap{ max-height:46vh; overflow:auto; border:1px solid var(--line-soft); border-radius:var(--radius); }
+  .scale-table{ width:100%; border-collapse:collapse; font-size:12.5px; table-layout:fixed; }
+  .scale-table th:nth-child(1){ width:36%; } .scale-table th:nth-child(3){ width:17%; } .scale-table th:nth-child(4){ width:19%; }
+  .scale-table .scale-id{ font-size:10.5px; overflow-wrap:anywhere; }
+  .scale-table th{ position:sticky; top:0; background:var(--surface-2); text-align:left; font-size:10.5px; text-transform:uppercase; letter-spacing:.05em; color:var(--ink-soft); padding:6px 8px; border-bottom:1px solid var(--line); }
+  .scale-table td{ padding:6px 8px; border-bottom:1px solid var(--line-soft); vertical-align:top; }
+  .scale-table tr.muted td{ color:var(--ink-faint); }
+  .scale-status{ display:inline-block; font-size:10.5px; font-weight:700; padding:2px 6px; border-radius:3px; white-space:nowrap; }
+  .scale-status.ok{ background:#E5F0DD; color:#2F6A2A; }
+  .scale-status.warn{ background:#FBEFD6; color:#8A5A12; }
+  .scale-status.muted{ background:var(--surface-2); color:var(--ink-soft); }
   /* Change log (Settings → Manage Data). */
   .audit-list{ max-height:360px; overflow:auto; border:1px solid var(--line-soft); border-radius:var(--radius); background:var(--surface); }
   .audit-row{ display:flex; gap:10px; align-items:flex-start; padding:8px 10px; border-bottom:1px solid var(--line-soft); font-size:13px; }
@@ -3577,6 +3593,7 @@ function drivePanelHtml(){
         <p class="hint" style="margin:8px 0 0;">The first time you sign in, Google shows a warning that it hasn't verified the app. That's expected for your own app: choose <b>Continue</b>.</p>
       </details>
     </div>
+    ${scaleImportHtml()}
     ${auditLogHtml()}
     ${backupSectionHtml()}`;
 }
@@ -3903,6 +3920,202 @@ async function restoreDoc(incoming, label){
   try{ await writeLocalDoc(); localSaveFailed = false; }catch(e){ localSaveFailed = true; }
   render(); refreshBadge();
   if(driveSetUp()) await syncNow('restore', { force:true });
+}
+
+/* ---------- Import from scale head file ----------
+   A session file from a Tru-Test (or similar) scale head, usually copied off a USB stick:
+   CSV with columns such as VID, Weight, ADG, Animal notes, EID, Date, Time.
+   Each row is matched to an animal by EID (the RFID), else by VID (visual tag or name),
+   and recorded as a weight plus one Weight Check event per animal, grouped as one scale session. */
+var scaleImport = null;
+var SCALE_HEADERS = {
+  eid: /^(eid|electronic ?id|rfid|eid ?tag|tag ?eid)$/,
+  vid: /^(vid|visual ?id|visual ?tag|vid ?tag|tag|tag ?(no|number|#)?|animal ?id)$/,
+  weight: /^(weight|wt|live ?weight|weight ?\((kg|lb|lbs)\))$/,
+  date: /^(date|weigh ?date|session ?date)$/,
+  time: /^(time|weigh ?time)$/,
+  notes: /^(animal ?notes?|notes?|comments?)$/,
+};
+function scaleImportHtml(){
+  return `<div class="field" style="${BOX}">
+    <label style="margin-bottom:6px;">Import from scale head file</label>
+    <p class="hint" style="margin:0 0 8px;">Load a weigh session saved by a Tru-Test (or similar) scale head, such as <span class="mono">Session_004.csv</span> from its USB stick. Each weight is matched to an animal by its EID (RFID) or VID and recorded as a Weight Check. You'll see every row before anything is saved.</p>
+    <input type="file" id="scale-file" accept=".csv,.txt,text/csv,text/plain" onchange="handleScaleFile(event)">
+  </div>`;
+}
+// A small CSV reader: quoted fields, commas or semicolons or tabs, Windows line endings.
+function parseCsvText(text){
+  text = String(text || '').replace(/^﻿/, '');
+  const firstLine = text.split(/\r?\n/, 1)[0] || '';
+  const delim = [',', ';', '\t'].sort((a, b)=> firstLine.split(b).length - firstLine.split(a).length)[0];
+  const rows = []; let row = [], cell = '', q = false;
+  for(let i = 0; i < text.length; i++){
+    const c = text[i];
+    if(q){
+      if(c==='"' && text[i+1]==='"'){ cell += '"'; i++; }
+      else if(c==='"') q = false;
+      else cell += c;
+    } else if(c==='"') q = true;
+    else if(c===delim){ row.push(cell); cell = ''; }
+    else if(c==='\n' || c==='\r'){
+      if(c==='\r' && text[i+1]==='\n') i++;
+      row.push(cell); rows.push(row); row = []; cell = '';
+    } else cell += c;
+  }
+  if(cell!=='' || row.length){ row.push(cell); rows.push(row); }
+  return rows.filter(r=> r.some(v=> String(v).trim()!==''));
+}
+function handleScaleFile(evt){
+  const input = evt.target, file = input.files && input.files[0];
+  if(!file) return;
+  file.text().then(text=>{
+    input.value = '';
+    const rows = parseCsvText(text);
+    const hi = rows.findIndex(r=> r.some(h=> SCALE_HEADERS.weight.test(String(h).trim().toLowerCase())));
+    if(hi < 0){ toast("That file has no Weight column. Choose the session file (.csv) from the scale head."); return; }
+    const head = rows[hi].map(h=> String(h).trim().toLowerCase());
+    const col = key=> head.findIndex(h=> SCALE_HEADERS[key].test(h));
+    const C = { eid: col('eid'), vid: col('vid'), weight: col('weight'), date: col('date'), time: col('time'), notes: col('notes') };
+    if(C.vid===C.eid) C.vid = -1;
+    const get = (r, k)=> C[k] >= 0 ? String(r[C[k]] == null ? '' : r[C[k]]).trim() : '';
+    const data = rows.slice(hi + 1).map((r, i)=>({ line: hi + i + 2, eid: get(r,'eid').replace(/\s+/g, ''), vid: get(r,'vid'), weight: get(r,'weight'),
+      date: get(r,'date'), time: get(r,'time'), notes: get(r,'notes') }));
+    if(!data.length){ toast('That scale file has no weights in it.'); return; }
+    const unitHead = head[C.weight] || '';
+    scaleImport = { fileName: file.name, rows: data, unit: /kg/.test(unitHead) ? 'kg' : 'lb', dateOrder: guessDateOrder(data.map(d=> d.date)),
+      addUnknown: false, newClass: 'Heifer Calf', hasDate: C.date >= 0 };
+    openScaleModal();
+  }).catch(()=> toast("Couldn't read that file."));
+}
+// Scale heads write dates as day-month-year or month-day-year depending on their settings.
+function splitDate(s){
+  const m = String(s||'').trim().match(/^(\d{1,4})[-\/.](\d{1,2})[-\/.](\d{1,4})/);
+  return m ? [Number(m[1]), Number(m[2]), Number(m[3])] : null;
+}
+function scaleDateIso(s, order){
+  const p = splitDate(s);
+  if(!p) return '';
+  let y, mo, d;
+  if(p[0] > 999){ [y, mo, d] = p; }
+  else { y = p[2] < 100 ? 2000 + p[2] : p[2]; if(order==='mdy'){ mo = p[0]; d = p[1]; } else { d = p[0]; mo = p[1]; } }
+  const dt = new Date(y, mo - 1, d);
+  if(isNaN(dt) || dt.getMonth()!==mo - 1 || dt.getDate()!==d) return '';
+  return localDay(dt);
+}
+function guessDateOrder(dates){
+  const parts = dates.map(splitDate).filter(p=> p && p[0] <= 999);
+  if(parts.some(p=> p[0] > 12)) return 'dmy';
+  if(parts.some(p=> p[1] > 12)) return 'mdy';
+  // Both readings work: pick the one that puts the session closest to today without being in the future.
+  const today = localDay();
+  const score = order=> dates.reduce((n, s)=>{ const iso = scaleDateIso(s, order); if(!iso) return n; const d = daysBetween(iso, today); return n + (d < 0 ? 100000 : d); }, 0);
+  return score('mdy') < score('dmy') ? 'mdy' : 'dmy';
+}
+function scaleTagNorm(s){ return String(s||'').replace(/[^0-9a-z]/gi, '').toLowerCase(); }
+function scaleFindAnimal(row){
+  if(row.eid){
+    const n = scaleTagNorm(row.eid);
+    const a = state.animals.find(x=> x.tagId && scaleTagNorm(x.tagId)===n);
+    if(a) return a;
+  }
+  if(row.vid){
+    const v = String(row.vid).trim().toLowerCase();
+    return state.animals.find(x=> String(x.visualTag||'').trim().toLowerCase()===v) || state.animals.find(x=> String(x.name||'').trim().toLowerCase()===v) || null;
+  }
+  return null;
+}
+// Each row with what will happen to it: ok, dup (already recorded), new (unknown tag, added if asked), unknown, notag, bad.
+function scaleResolved(){
+  const S = scaleImport, seen = new Set();
+  const today = localDay();
+  return S.rows.map(r=>{
+    const w = parseFloat(String(r.weight).replace(',', '.'));
+    const lbs = isNaN(w) || w <= 0 ? null : Math.round((S.unit==='kg' ? w * 2.20462 : w) * 10) / 10;
+    const date = S.hasDate ? scaleDateIso(r.date, S.dateOrder) : today;
+    const a = scaleFindAnimal(r);
+    let status;
+    if(lbs===null || !date) status = 'bad';
+    else if(a){
+      const key = a.id + '|' + date + '|' + lbs;
+      status = (seen.has(key) || (a.weights||[]).some(x=> x.date===date && Number(x.lbs)===lbs)) ? 'dup' : 'ok';
+      seen.add(key);
+    }
+    else if(r.eid) status = S.addUnknown ? 'new' : 'unknown';
+    else status = r.vid ? 'unknown' : 'notag';
+    return Object.assign({}, r, { rawDate: r.date, lbs, date, animal: a, status });
+  });
+}
+var SCALE_STATUS = { ok:['Will record','ok'], new:['New animal','ok'], dup:['Already recorded','muted'], unknown:['No matching animal','warn'], notag:['No tag read','warn'], bad:['No weight or date','warn'] };
+function openScaleModal(){
+  if(!scaleImport) return;
+  const S = scaleImport, rows = scaleResolved();
+  const count = k=> rows.filter(r=> r.status===k).length;
+  const toSave = count('ok') + count('new');
+  const unknownEids = rows.filter(r=> r.eid && !r.animal && r.lbs!==null && r.date).length;
+  const dates = [...new Set(rows.map(r=> r.date).filter(Boolean))].sort();
+  const sel = (v, cur, label)=> `<option value="${v}" ${v===cur ? 'selected' : ''}>${label}</option>`;
+  const body = `
+    <p class="hint" style="margin:0 0 12px;"><b>${escapeHtml(S.fileName)}</b> · ${rows.length} weight${rows.length===1?'':'s'}${dates.length ? ' · ' + dates.map(d=> fmtDate(d)).join(', ') : ''}</p>
+    <div class="scale-opts">
+      ${S.hasDate ? `<div><label>Dates in the file are</label><select onchange="scaleImport.dateOrder=this.value; openScaleModal();">
+        ${sel('dmy', S.dateOrder, 'Day-Month-Year')}${sel('mdy', S.dateOrder, 'Month-Day-Year')}</select></div>` : ''}
+      <div><label>Weights are in</label><select onchange="scaleImport.unit=this.value; openScaleModal();">${sel('lb', S.unit, 'Pounds (lb)')}${sel('kg', S.unit, 'Kilograms (kg)')}</select></div>
+    </div>
+    ${unknownEids ? `<div class="scale-new">
+      <label class="check-row"><input type="checkbox" ${S.addUnknown ? 'checked' : ''} onchange="scaleImport.addUnknown=this.checked; openScaleModal();"> Add the ${unknownEids} tag${unknownEids===1?'':'s'} not in the herd as new animals</label>
+      ${S.addUnknown ? `<div style="margin-top:6px;"><label style="font-size:11px;">Class for the new animals</label><select onchange="scaleImport.newClass=this.value; openScaleModal();">${CLASSES.map(c=> sel(c, S.newClass, c)).join('')}</select></div>` : ''}
+    </div>` : ''}
+    <div class="scale-table-wrap"><table class="scale-table">
+      <thead><tr><th>EID / VID</th><th>Animal</th><th class="num-cell">Weight</th><th>Date</th></tr></thead>
+      <tbody>${rows.map(r=>{
+        const [label, tone] = SCALE_STATUS[r.status];
+        return `<tr class="${tone}">
+          <td class="mono scale-id">${escapeHtml(r.eid || r.vid || '—')}${r.eid && r.vid ? `<br><span class="hint">${escapeHtml(r.vid)}</span>` : ''}</td>
+          <td>${r.animal ? escapeHtml(displayName(r.animal)) : r.status==='new' ? '<i>New ' + escapeHtml(S.newClass.toLowerCase()) + '</i>' : ''}<br><span class="scale-status ${tone}">${label}</span></td>
+          <td class="num-cell">${r.lbs===null ? escapeHtml(r.weight || '—') : r.lbs + ' lb'}</td>
+          <td>${r.date ? escapeHtml(new Date(r.date + 'T00:00:00').toLocaleDateString('en-US', { month:'short', day:'numeric' })) : escapeHtml(r.rawDate || '—')}${r.time ? `<br><span class="hint">${escapeHtml(r.time)}</span>` : ''}</td></tr>`;
+      }).join('')}</tbody></table></div>
+    <p class="hint" style="margin:10px 0 0;">${toSave ? `<b>${toSave}</b> weight${toSave===1?'':'s'} will be recorded as Weight Checks.` : 'Nothing new to record.'}
+      ${count('dup') ? ` ${count('dup')} already recorded (skipped).` : ''}${count('unknown') ? ` ${count('unknown')} with no matching animal (skipped).` : ''}${count('notag') ? ` ${count('notag')} with no tag read (skipped).` : ''}${count('bad') ? ` ${count('bad')} without a weight or date (skipped).` : ''}</p>
+    <div class="modal-actions">
+      <button type="button" class="btn ghost" onclick="scaleImport=null; closeModal();">Cancel</button>
+      <button type="button" class="btn rust" ${toSave ? '' : 'disabled'} onclick="confirmScaleImport()">Record ${toSave} weight${toSave===1?'':'s'}</button>
+    </div>`;
+  document.getElementById('modal-root').innerHTML = modalShell('Import from scale head', body);
+}
+function confirmScaleImport(){
+  if(!scaleImport) return;
+  const S = scaleImport, rows = scaleResolved().filter(r=> r.status==='ok' || r.status==='new');
+  if(!rows.length) return;
+  const groupIds = {};                     // one scale session per date → one row on the Health page
+  const created = new Map();
+  let added = 0;
+  rows.forEach(r=>{
+    let a = r.animal;
+    if(!a && r.status==='new'){
+      const k = scaleTagNorm(r.eid);
+      a = created.get(k);
+      if(!a){
+        a = { id: uid(), tagId: r.eid, name: '', visualTag: r.vid || '', klass: S.newClass, breed: '', dob: '', yearLetter: '', damId: '', sireId: '',
+          status: 'active', pasture: '', notes: `Added from scale file ${S.fileName}`, salePrice: '', weights: [], photo: null };
+        state.animals.push(a); created.set(k, a); added++;
+      }
+    }
+    a.weights = a.weights || [];
+    if(a.weights.some(x=> x.date===r.date && Number(x.lbs)===r.lbs)) return;
+    a.weights.push({ date: r.date, lbs: r.lbs });
+    const groupId = groupIds[r.date] || (groupIds[r.date] = uid());
+    state.events.push({ id: uid(), animalId: a.id, type: 'Weight Check', date: r.date, nextDue: null, vaccine: '', vaccines: [],
+      notes: r.notes || '',
+      weight: r.lbs, groupId, groupLabel: 'Scale · ' + S.fileName.replace(/\.[^.]+$/, '') });
+  });
+  const n = rows.length;
+  scaleImport = null;
+  closeModal();
+  saveState();
+  render();
+  toast(`Recorded ${n} weight${n===1?'':'s'} from the scale${added ? `, and added ${added} new animal${added===1?'':'s'}` : ''}`);
+  confirmOnDrive('Scale import');
 }
 
 /* ---------- Backup files ----------
