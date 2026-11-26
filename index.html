@@ -2594,7 +2594,7 @@ function viewDashboard(){
   const allTasks = getUpcomingTasks();
   const tasks = allTasks.slice(0,10);
   upcomingCache = tasks;
-  const overdueCount = allTasks.filter(t=>t.days<0).length;
+  const soldCount = state.animals.filter(a=>a.status==='sold').length;
 
   // Future-dated events are upcoming, not recent.
   const recentGroups = groupEvents(state.events.filter(ev=> !ev.date || ev.date <= todayStr()).sort((a,b)=> a.date<b.date?1:-1)).slice(0,6);
@@ -2610,7 +2610,7 @@ function viewDashboard(){
       <div class="stat-card clickable" title="Calves at side (not weaned)" onclick="openSummary('atside')"><div class="num">${calves}</div><div class="label">Calves at side&nbsp;›</div></div>
       <div class="stat-card clickable" title="Open heifers by age" onclick="openSummary('Open Heifer')"><div class="num">${heifers}</div><div class="label">Open heifers&nbsp;›</div></div>
       <div class="stat-card clickable" title="Bulls by age" onclick="openSummary('Bull')"><div class="num">${bulls}</div><div class="label">Bulls&nbsp;›</div></div>
-      <div class="stat-card clickable ${overdueCount>0?'accent':''}" title="Go to Upcoming & overdue" onclick="document.getElementById('upcoming-panel').scrollIntoView({behavior:'smooth', block:'start'})"><div class="num">${overdueCount}</div><div class="label">Overdue tasks&nbsp;›</div></div>
+      <div class="stat-card clickable" title="Open the sold animals list, with sale prices" onclick="viewSoldAnimals()"><div class="num">${soldCount}</div><div class="label">Sold animals&nbsp;›</div></div>
     </div>
 
     <div class="panel" id="upcoming-panel">
@@ -2875,6 +2875,12 @@ function viewPastures(){
   `;
 }
 
+// Open the Animals tab showing only sold animals (the list adds a Price column).
+function viewSoldAnimals(){
+  animalFilters = { search:'', klass:'all', status:'sold', pasture:'all' };
+  setTab('animals');
+  window.scrollTo(0, 0);
+}
 // Open the Animals tab filtered to one pasture ('__none__' = unassigned), showing every animal there.
 function viewAnimalsInPasture(name){
   animalFilters = { search:'', klass:'all', status:'inherd', pasture: name };
